@@ -6,6 +6,7 @@
  * the bump:
  *
  *   - only docs / tests / CI / tooling changed      → no release
+ *   - a package.json edit that isn't deps or bin/files → no release
  *   - `!:` after the type, `BREAKING CHANGE`, [major] → major
  *   - `feat:` / `feat(scope):`, [minor]               → minor
  *   - any other change to the shipped program         → patch
@@ -26,17 +27,26 @@ export interface Commit {
   subject: string;
   body: string;
   files: string[];
+  /** For commits touching package.json: whether the edit changes the built or packaged program. */
+  packageJsonShips?: boolean;
 }
 
-/** Paths whose change alters the released binary. Everything else (docs, tests, CI) doesn't release. */
-export const SHIPPED = [/^src\//, /^patches\//, /^package\.json$/, /^bun\.lock$/, /^scripts\/package\.ts$/];
+/** Paths whose change always alters the released binary. Everything else (docs, tests, CI) doesn't release. */
+export const SHIPPED = [/^src\//, /^patches\//, /^bun\.lock$/, /^scripts\/package\.ts$/];
+
+/**
+ * package.json is not a shipped path on its own: adding a script, a keyword or a version is not a
+ * release. These are the fields that change what gets built or packaged.
+ */
+export const PACKAGE_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "bin", "files"] as const;
 
 /** Commits the release workflow itself pushes after publishing; counting them would release forever. */
 export const isReleaseBookkeeping = (subject: string) => /^(chore\(release\)|brew):/i.test(subject);
 
 export const optsOut = (c: Commit) => /\[(skip release|no release)\]/i.test(`${c.subject}\n${c.body}`);
 
-export const touchesShipped = (c: Commit) => c.files.some((f) => SHIPPED.some((re) => re.test(f)));
+export const touchesShipped = (c: Commit) =>
+  c.files.some((f) => SHIPPED.some((re) => re.test(f))) || (c.files.includes("package.json") && c.packageJsonShips !== false);
 
 export function commitBump(c: Commit): Bump {
   const text = `${c.subject}\n${c.body}`;
@@ -121,6 +131,20 @@ export async function lastRelease(cwd: string, sha: string): Promise<string | nu
   return tags[tags.length - 1]!.slice(1);
 }
 
+/**
+ * Whether a commit's package.json edit changes dependencies or packaging. Unreadable or root
+ * commits count as shipping: a missed release is cheap, a silent one is not.
+ */
+async function packageJsonChanged(cwd: string, sha: string): Promise<boolean> {
+  try {
+    const before = JSON.parse(await git(cwd, "show", `${sha}^1:package.json`));
+    const after = JSON.parse(await git(cwd, "show", `${sha}:package.json`));
+    return PACKAGE_FIELDS.some((f) => JSON.stringify(before[f] ?? null) !== JSON.stringify(after[f] ?? null));
+  } catch {
+    return true;
+  }
+}
+
 export async function commitsSince(cwd: string, last: string | null, sha: string): Promise<Commit[]> {
   const range = last ? `v${last}..${sha}` : sha;
   const raw = await git(cwd, "log", "--reverse", "--format=%H%x1f%s%x1f%b%x1e", range);
@@ -130,7 +154,8 @@ export async function commitsSince(cwd: string, last: string | null, sha: string
     const [id, subject, body] = chunk.trim().split("\x1f");
     // First-parent diff: a merge commit counts for what it brought into the branch.
     const files = (await git(cwd, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "-m", "--first-parent", id!)).split("\n").filter(Boolean);
-    out.push({ sha: id, subject: subject ?? "", body: body ?? "", files });
+    const packageJsonShips = files.includes("package.json") ? await packageJsonChanged(cwd, id!) : undefined;
+    out.push({ sha: id, subject: subject ?? "", body: body ?? "", files, packageJsonShips });
   }
   return out;
 }

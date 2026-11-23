@@ -219,3 +219,37 @@ describe("recording a release on main", () => {
     expect(existsSync(join(s.a, ".git", "rebase-merge"))).toBe(false); // left clean, not mid-rebase
   });
 });
+
+describe("package.json edits", () => {
+  const write = (dir: string, body: object) => writeFileSync(join(dir, "package.json"), `${JSON.stringify(body, null, 2)}\n`);
+
+  test("adding a script is tooling, not a release", async () => {
+    const r = await repo();
+    write(r.dir, { name: "x", version: "0.1.0", scripts: { test: "bun test" } });
+    await r.g("add", "-A");
+    await r.g("commit", "-q", "-m", "Initial");
+    await r.g("tag", "v0.1.0");
+    write(r.dir, { name: "x", version: "0.1.0", scripts: { test: "bun test", demo: "vhs docs/demo.tape" } });
+    await r.g("add", "-A");
+    await r.g("commit", "-q", "-m", "Add a demo script");
+
+    const plan = planRelease({ last: "0.1.0", initial: "0.1.0", commits: await commitsSince(r.dir, "0.1.0", "HEAD") });
+    expect(plan.release).toBe(false);
+    expect(plan.reason).toContain("nothing that ships changed");
+  });
+
+  test("a new dependency is a patch release", async () => {
+    const r = await repo();
+    write(r.dir, { name: "x", version: "0.1.0" });
+    await r.g("add", "-A");
+    await r.g("commit", "-q", "-m", "Initial");
+    await r.g("tag", "v0.1.0");
+    write(r.dir, { name: "x", version: "0.1.0", dependencies: { ws: "^8.0.0" } });
+    await r.g("add", "-A");
+    await r.g("commit", "-q", "-m", "Use ws for the socket");
+
+    const plan = planRelease({ last: "0.1.0", initial: "0.1.0", commits: await commitsSince(r.dir, "0.1.0", "HEAD") });
+    expect(plan.release).toBe(true);
+    expect(plan.version).toBe("0.1.1");
+  });
+});
