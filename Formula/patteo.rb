@@ -1,28 +1,28 @@
 class Patteo < Formula
   desc "Fast, keyboard-first terminal client for Paseo"
   homepage "https://github.com/achintya-7/patteo"
-  version "0.1.1"
+  version "0.1.2"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/achintya-7/patteo/releases/download/v0.1.1/patteo-darwin-arm64.tar.gz"
-      sha256 "ca2dc01b3829c7b4dc5d0e2ec1d508fddbbe5041573dc1f004ff65c915f1024f"
+      url "https://github.com/achintya-7/patteo/releases/download/v0.1.2/patteo-darwin-arm64.tar.gz"
+      sha256 "1375df5b1edde3b54fa53c45037e815f91235a418de80cf0ec42b0263b66817a"
     end
     on_intel do
-      url "https://github.com/achintya-7/patteo/releases/download/v0.1.1/patteo-darwin-x64.tar.gz"
-      sha256 "20d22e6c297aacb4dd5e1a0c05492b779ffec5c31089631c4e3aab0616de65bb"
+      url "https://github.com/achintya-7/patteo/releases/download/v0.1.2/patteo-darwin-x64.tar.gz"
+      sha256 "62adb1b5192c40a8fbc26672ea33df91d9bfe4fbf11bc6f7a2f5b85733ffb146"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/achintya-7/patteo/releases/download/v0.1.1/patteo-linux-arm64.tar.gz"
-      sha256 "b53a31caabb3b09f63aff29669150a25244c0dcdc7e103c6a091a2d02d90f1aa"
+      url "https://github.com/achintya-7/patteo/releases/download/v0.1.2/patteo-linux-arm64.tar.gz"
+      sha256 "bc33651c739be5928d9a5018337b5b864f9ccd5bc680ca95b40ac99720c10372"
     end
     on_intel do
-      url "https://github.com/achintya-7/patteo/releases/download/v0.1.1/patteo-linux-x64.tar.gz"
-      sha256 "306f1d6a7d88bdd69d74ae60b9adfb3f03a4421534a8ab0c755cefaec0f27152"
+      url "https://github.com/achintya-7/patteo/releases/download/v0.1.2/patteo-linux-x64.tar.gz"
+      sha256 "f1e4c2b698544327ad1a190caa59889548aa6980c41b3137695b5b778f0c5c64"
     end
   end
 
