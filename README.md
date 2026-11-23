@@ -203,12 +203,6 @@ Releases are automatic. Every push to `main` is considered: changes to the progr
 
 `patches/` holds one Bun patch for `@opentui/core` 0.9.7, whose markdown renderer crashed on a streamed list (`updateList` read an item that hadn't been shown yet). Drop it once upstream fixes the bug.
 
-## Star history
-
-If patteo saves you a trip to the browser, a ⭐ helps other people find it.
-
-[![Star History Chart](https://api.star-history.com/svg?repos=achintya-7/patteo&type=Date)](https://star-history.com/#achintya-7/patteo&Date)
-
 ## License
 
 [Apache-2.0](LICENSE). patteo is an independent client built on Paseo's public SDK; some modules follow the structure of the Paseo app (Apache-2.0, © Mohamed Boudra), see [NOTICE](NOTICE). Built with [Bun](https://bun.sh), [OpenTUI](https://opentui.com) and React.
