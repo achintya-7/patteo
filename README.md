@@ -10,9 +10,9 @@
 ![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-cba6f7)
 [![Stars](https://img.shields.io/github/stars/achintya-7/patteo?style=social)](https://github.com/achintya-7/patteo/stargazers)
 
-<img src="docs/screenshots/hero.svg" alt="patteo showing a conversation with a coding agent" width="900">
+<img src="docs/demo.gif" alt="patteo: a conversation with a coding agent, the changes panel, a syntax-coloured diff, a pull request, and an agent asking a question — all from the keyboard" width="1000">
 
-<sub>Screenshots use demo data. They are the real interface, rendered from the real code.</sub>
+<sub>The demo is the real interface, recorded from the real code with demo data.</sub>
 
 </div>
 
@@ -196,6 +196,7 @@ bun test                    # unit and render tests
 bun run typecheck
 bun run check:stress        # drives the real UI: resizes, dialogs, composer, all themes
 bun run screenshots         # regenerates docs/screenshots from demo data
+brew install vhs && bun run demo   # re-records docs/demo.gif from the same data
 bun scripts/frames.tsx 120 30   # print screen captures (KEYS="j,return,wait" to drive it)
 ```
 
