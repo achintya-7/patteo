@@ -107,10 +107,25 @@ Debug logs: `PATTEO_DEBUG=1 bun run dev`, then read `~/.config/patteo/patteo.log
 
 ## Releasing
 
-Bump `version` in `package.json`, commit, then `git tag v<version> && git push --tags`. The Release workflow
-typechecks and tests, cross-compiles all platforms, smoke-runs each binary on its own OS, publishes the GitHub
-release with `checksums.txt`, updates `Formula/patteo.rb`, pushes the Docker image to ghcr.io, and finally runs the
-install scripts against the published release on Linux, macOS and Windows.
+Releases happen on their own: every push to `main` runs the **Release** workflow, which reads the commits since the
+last `vX.Y.Z` tag and decides.
+
+| Commits since the last release | Result |
+|---|---|
+| only docs, tests, CI or tooling | no release |
+| a change to `src/`, `patches/`, dependencies | **patch** (`0.1.0` → `0.1.1`) |
+| `feat:` / `feat(scope):` (or `[minor]`) | **minor** (`0.1.0` → `0.2.0`) |
+| `feat!:`, `BREAKING CHANGE`, or `[major]` | **major** (`0.1.0` → `1.0.0`) |
+| `[skip release]` in the message | that commit doesn't count |
+
+The strongest commit wins. A release is the exact commit that was built and tested: it builds all platforms, runs
+each binary on its own OS, publishes the GitHub release (the tag points at that commit), updates `Formula/patteo.rb`
+and `package.json` on `main`, pushes the Docker image to ghcr.io, and installs the published release on Linux, macOS
+and Windows. The version comes from the tags, so there is nothing to bump by hand.
+
+To release by hand (force a bump, or preview), use **Actions → Release → Run workflow**: pick `patch`, `minor` or
+`major`, or tick *dry run* to see the plan without publishing. Locally, `bun scripts/version.ts plan` prints what the
+next push would do.
 
 ## Development
 
