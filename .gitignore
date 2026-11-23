@@ -1,8 +1,10 @@
 *.log
 .DS_Store
+.agents/
+.claude/
+.hermes/
+.junie/
 .release-docker
 dist
 node_modules
-.agents/
-.claude/
 skills-lock.json
