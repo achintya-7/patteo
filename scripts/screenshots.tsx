@@ -71,7 +71,7 @@ const QUESTION = {
         multiSelect: false,
         allowOther: true,
       },
-      { question: "Which browsers should the fix run on?", header: "Browsers", options: [{ label: "Chromium" }, { label: "Firefox" }, { label: "WebKit" }], multiSelect: true },
+      { question: "Which browsers should the fix run on?", header: "Browsers", options: [{ label: "Chromium" }, { label: "Firefox" }, { label: "WebKit" }], multiSelect: true, allowOther: true },
     ],
   },
 };
@@ -315,6 +315,7 @@ const SCENES: Record<string, Scene> = {
       seed(s, { workspace: "w-flaky", agent: "a-flaky" });
       s.ui.actions.openModal({ kind: "permissions" });
     },
+    // Answer the first question (the caret moves on by itself), then type an "Other" answer to the second.
   },
 };
 
@@ -425,7 +426,7 @@ async function render(name: string, scene: Scene) {
   // No daemon: the views only need these calls, and the data is already in the stores.
   const runtimes = {
     get: () => ({
-      openTimeline: () => () => {}, loadOlder: noop, loadChanges: noop, listDir: noop, send: noop, cancel: noop,
+      openTimeline: () => () => {}, loadOlder: noop, loadChanges: noop, listDir: noop, send: noop, cancel: noop, respondToPermission: noop,
       readFile: async () => ({ kind: "text", text: FILE_TEXT, size: FILE_TEXT.length, truncated: false }),
     }),
     hosts: () => [], start: () => {}, disposeAll: noop,

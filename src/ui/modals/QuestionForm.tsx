@@ -13,7 +13,7 @@ import { wrapText } from "../explorer/pr-model";
 import { keepVisible } from "../explorer/window";
 import { Overlay } from "./Overlay";
 import {
-  allAnswered, buildRows, buildAnswers, dismissAnswersEmpty, dismissLabel, initialForm, isAnswered, reduceForm, showsTextInput,
+  allAnswered, buildRows, buildAnswers, dismissAnswersEmpty, dismissLabel, initialForm, isAnswered, reduceForm,
   type FormEvent, type FormState, type Question, type Row,
 } from "./question-model";
 
@@ -188,18 +188,22 @@ export function QuestionForm({ questions, input, agentTitle, busy, error, onResp
   });
 
   const cursorItem = Math.max(0, items.findIndex((i) => i.cursor === form.cursor));
-  const view = Math.max(4, termHeight - 8);
+  // The dialog is as tall as the form needs, not the screen: a short question stays short.
+  const view = Math.min(items.length, Math.max(4, termHeight - 8));
   const top = keepVisible(cursorItem, start, view, items.length);
   if (top !== start) setStart(top);
+  const height = Math.min(termHeight - 2, Math.min(items.length, view) + 4); // header, content, footer, border
 
   const hints = editingQuestion
-    ? ["type your answer", "⏎ done", "esc cancel"]
-    : ["↑↓ move", "1-9 pick", "␣ toggle", ...(showsTextInput(questions[Math.max(0, rows[form.cursor]?.q ?? 0)]!) ? ["o other"] : []), `d ${dismissLabel(questions).toLowerCase()}`, "esc later", ...(footerExtra ? [footerExtra.replace(/^ · /, "")] : [])];
+    ? ["⏎ done", "esc cancel"]
+    : ["↑↓ move", "1-9 pick", "␣ toggle", `d ${dismissLabel(questions).toLowerCase()}`, "esc later", ...(footerExtra ? [footerExtra.replace(/^ · /, "")] : [])];
+  // Arrows and the space glyph take two cells in most terminal fonts, so count them that way.
+  const cells = (text: string) => [...text].reduce((n, ch) => n + (ch.codePointAt(0)! > 0x2000 ? 2 : 1), 0);
   let footer = hints.join(" · ");
-  for (let n = hints.length; footer.length > width - 8 && n > 1; n--) footer = hints.slice(0, n - 1).join(" · ");
+  for (let n = hints.length; cells(footer) > width - 14 && n > 1; n--) footer = hints.slice(0, n - 1).join(" · ");
 
   return (
-    <Overlay title="Question" width={88} height={Math.min(termHeight - 2, view + 5)} footer={busy ? "sending…" : footer}>
+    <Overlay title="Question" width={88} height={height} footer={busy ? "sending…" : footer}>
       <text fg={t.subtle} wrapMode="none">
         {truncate(`from ${agentTitle}`, Math.max(10, inner - 22))}
         <span fg={t.subtle}>{`  ${questions.filter((x, i) => isAnswered(x, i, form.selections, form.others)).length}/${questions.length} answered`}</span>
