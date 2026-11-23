@@ -15,6 +15,8 @@ import { findTheme } from "./theme/themes";
 import { App } from "./ui/App";
 import { composerHandle } from "./ui/agent/Composer";
 import { setMotionFrozen } from "./ui/motion/clock";
+import { copyForUser, isPasteKey, readClipboard } from "./util/clipboard";
+import { watchSelection } from "./ui/clipboard-selection";
 
 export interface AppStateOptions {
   /** Persist settings/state/hosts to ~/.config/patteo (off for tests and scripts). */
@@ -61,6 +63,16 @@ export function AppRoot({ state, onQuit }: { state: AppContextValue; onQuit?: ()
         if (composerHandle.hasText()) return composerHandle.clear();
         return quit();
       }
+      // Some terminals forward ⌘V / Ctrl+V as a key instead of pasting (and macOS sends ⌘ as
+      // "super"). Paste it ourselves, into the composer when that is where you are typing.
+      if (isPasteKey(k) && state.ui.getState().focus === "composer" && !state.ui.getState().modal) {
+        k.preventDefault();
+        void readClipboard().then((text) => {
+          if (text) composerHandle.insert(text);
+          else state.ui.actions.toast("The clipboard is empty or not readable here", "info", 2000);
+        });
+        return;
+      }
       if (dispatchGlobal(k)) k.preventDefault();
     };
     renderer.keyInput.on("keypress", onKey);
@@ -69,6 +81,18 @@ export function AppRoot({ state, onQuit }: { state: AppContextValue; onQuit?: ()
     };
   }, [renderer]);
   useEffect(() => refreshKeymap(), [s.keymap]);
+
+  // Selecting text with the mouse copies it, the way a terminal emulator does. The native
+  // clipboard covers Terminal.app; OSC 52 covers SSH sessions.
+  useEffect(
+    () =>
+      watchSelection(
+        renderer as unknown as Parameters<typeof watchSelection>[0],
+        (text) => copyForUser(text, (t) => renderer.copyToClipboardOSC52(t)),
+        (message) => state.ui.actions.toast(message, "info", 1400),
+      ),
+    [renderer],
+  );
 
   return (
     <ThemeContext.Provider value={theme}>

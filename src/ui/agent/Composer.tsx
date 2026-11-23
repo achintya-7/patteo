@@ -8,9 +8,12 @@ import { resolveSlash, slashMatches, visibleSlash, type SlashCommand } from "./s
 import { composerHeight, composerLineCount } from "./composer-size";
 
 /** Lets the global Ctrl+C know whether to clear the composer instead of quitting. */
+/** What the app (and the global key handler) can ask the open composer to do. */
 export const composerHandle = {
   hasText: () => false,
   clear: () => {},
+  /** Inserts text at the cursor; used when a terminal sends ⌘V as a key instead of pasting. */
+  insert: (_text: string) => {},
 };
 
 /** Used until the pane passes its own cap (half the body height). */
@@ -47,6 +50,10 @@ export function Composer({ hostId, agentId, width, maxLines = COMPOSER_MAX_LINES
   composerHandle.hasText = () => focused && !!ref.current?.plainText.length;
   composerHandle.clear = () => {
     ref.current?.setText("");
+    sync();
+  };
+  composerHandle.insert = (text: string) => {
+    ref.current?.insertText(text);
     sync();
   };
 

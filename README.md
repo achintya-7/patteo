@@ -162,6 +162,8 @@ The **Files** tab is the workspace's tree, listed by the daemon (so it works for
 | `T` | Change theme |
 | `e` / `r` | Expand activity / show thoughts |
 | `q` | Quit (never while typing) |
+| Mouse drag | Select text; it goes to your clipboard (native clipboard and OSC 52, so it works over SSH too) |
+| `⌘V` / `Ctrl+V` | Paste into the composer (terminals that paste by themselves work as always) |
 
 Every key can be remapped, see below.
 
