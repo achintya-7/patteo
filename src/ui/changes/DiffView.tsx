@@ -100,20 +100,29 @@ export function DiffView({ hostId, workspaceId, width, height }: { hostId: strin
     </box>
   );
 
+  // The header is one row: path on the left, counts and the PR badge on the right. Budget the
+  // right side first (dropping the badge when narrow), then give the path what is left.
+  const counts = file ? `+${file.additions}  −${file.deletions}` : "";
+  const position = `  ${index + 1}/${files.length}`;
+  const badgeText = inner >= 72 ? `  ${truncate(badge.text, 26)}` : "";
+  const rightLen = counts.length + position.length + badgeText.length;
+  const renamed = file && file.oldPath && file.oldPath !== file.path ? `  ← ${truncate(file.oldPath, 18)}` : "";
+  const pathW = Math.max(8, inner - rightLen - 4 - renamed.length);
+
   return (
     <box flexDirection="column" width="100%" height="100%">
       <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
         <text wrapMode="none">
           <span fg={file?.isNew ? t.success : file?.isDeleted ? t.error : t.warning}>{`${file ? fileGlyph(file) : "?"} `}</span>
-          <span fg={t.text}>{truncate(path ?? "", Math.max(10, inner - 24))}</span>
-          {file && file.oldPath && file.oldPath !== file.path ? <span fg={t.subtle}>{`  ← ${truncate(file.oldPath, 24)}`}</span> : null}
+          <span fg={t.text}>{truncate(path ?? "", pathW)}</span>
+          {renamed ? <span fg={t.subtle}>{renamed}</span> : null}
         </text>
         <text wrapMode="none">
           {file ? <span fg={t.success}>{`+${file.additions}`}</span> : null}
           {file ? <span fg={t.subtle}>{"  "}</span> : null}
           {file ? <span fg={t.error}>{`−${file.deletions}`}</span> : null}
-          <span fg={t.subtle}>{`  ${index + 1}/${files.length}  `}</span>
-          <span fg={badge.tone === "err" ? t.error : t.subtle}>{badge.text}</span>
+          <span fg={t.subtle}>{position}</span>
+          {badgeText ? <span fg={badge.tone === "err" ? t.error : t.subtle}>{badgeText}</span> : null}
         </text>
       </box>
       <box height={1} flexShrink={0} />

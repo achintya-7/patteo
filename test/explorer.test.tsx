@@ -86,6 +86,46 @@ describe("file tree model", () => {
   });
 });
 
+describe("diff header", () => {
+  test("a long path is cut to leave room for the counts instead of running into them", async () => {
+    const store = createSessionStore();
+    store.actions.addHost({ id: "h", label: "h", url: "ws://x/ws" });
+    store.actions.setActiveHost("h");
+    store.actions.updateChanges(changesKey("h", "w"), () => ({
+      ...emptyChanges(),
+      files: [file("src/checkout/components/payment/forms/card-field-with-a-very-long-name.tsx") as never, file("b.ts") as never],
+      pr: { url: "u", state: "OPEN", number: 482, checksStatus: "FAILURE", checks: [] },
+    }));
+    const ui = createUiStore();
+    ui.actions.setDiffPath("src/checkout/components/payment/forms/card-field-with-a-very-long-name.tsx");
+    const settings = createSettingsStore(DEFAULT_SETTINGS, [], { persist: false });
+    const origError = console.error;
+    console.error = () => {};
+    const render = async (width: number) => {
+      const t = await testRender(
+        <AppContext.Provider value={{ store, ui, runtimes: {} as never, settings }}>
+          <box width={width} height={8}><DiffView hostId="h" workspaceId="w" width={width} height={8} /></box>
+        </AppContext.Provider>,
+        { width, height: 8 },
+      );
+      await t.renderOnce();
+      const row = t.captureCharFrame().split("\n")[0]!;
+      t.renderer.destroy();
+      return row;
+    };
+    try {
+      const narrow = await render(46);
+      expect(narrow).toMatch(/…\s+\+2\s+−1\s+1\/2/); // cut path, a gap, then the counts
+      expect(narrow).not.toContain("#482"); // no room for the badge
+      const wide = await render(150);
+      expect(wide).toContain("card-field-with-a-very-long-name.tsx"); // plenty of room: nothing cut
+      expect(wide).toContain("#482 open");
+    } finally {
+      console.error = origError;
+    }
+  });
+});
+
 describe("diff highlighting", () => {
   test("colour blending takes hex in either form and refuses anything else", () => {
     expect(mixHex("#ff0000", "#000000", 0.5)).toBe("#800000");
