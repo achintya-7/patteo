@@ -1,6 +1,6 @@
 {
   "name": "patteo",
-  "version": "0.1.4",
+  "version": "0.1.0",
   "description": "A fast, keyboard-first terminal client for Paseo",
   "license": "Apache-2.0",
   "author": "Achintya",
@@ -27,7 +27,7 @@
     "check:e2e": "bun scripts/e2e-agent.ts",
     "package": "bun scripts/package.ts",
     "screenshots": "bun scripts/screenshots.tsx",
-    "demo": "vhs docs/demo.tape"
+    "demo": "vhs docs/demo.tape && bun scripts/demo-gif.ts"
   },
   "dependencies": {
     "@getpaseo/client": "0.16.1",
