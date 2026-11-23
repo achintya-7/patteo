@@ -97,83 +97,126 @@ export const dismissLabel = (qs: Question[], fallback = "Dismiss") => qs.find((q
 /** The rows the option list shows: every option, then "Other…" when free text is allowed. */
 export const rowCount = (q: Question) => q.options.length + (q.allowOther && q.options.length > 0 ? 1 : 0);
 
-/** The form's whole interaction state: pure, so every key is unit-tested without a terminal. */
+/** One control in the flat list the form draws: every option of every question, in order. */
+export interface Row {
+  /** Question index, or -1 for the submit row. */
+  q: number;
+  kind: "option" | "other" | "submit";
+  /** Option index for `kind: "option"`. */
+  option: number;
+}
+
+/**
+ * Every question at once: its options, an "Other" row when free text is allowed (or the only row
+ * when there are no options), then a submit row at the end.
+ */
+export function buildRows(qs: Question[]): Row[] {
+  const rows: Row[] = [];
+  qs.forEach((q, qi) => {
+    q.options.forEach((_, option) => rows.push({ q: qi, kind: "option", option }));
+    if (q.allowOther || q.options.length === 0) rows.push({ q: qi, kind: "other", option: -1 });
+  });
+  rows.push({ q: -1, kind: "submit", option: -1 });
+  return rows;
+}
+
+/** The form's interaction state. `cursor` indexes `buildRows(qs)`. */
 export interface FormState {
-  /** Active question. */
-  qi: number;
-  /** Option cursor per question. */
-  cursors: Record<number, number>;
+  cursor: number;
   selections: Selections;
   others: OtherTexts;
-  /** Typing into the free-text answer. */
-  editing: boolean;
+  /** Question whose free-text answer is being typed (its input is open in the form). */
+  editing: number | null;
 }
 
 export type FormEvent =
   | { type: "move"; delta: number }
-  | { type: "pick"; index: number }
+  | { type: "pick"; row?: number }
   | { type: "toggle" }
   | { type: "confirm" }
-  | { type: "question"; delta: number }
   | { type: "typed"; text: string }
-  | { type: "edit" };
+  | { type: "edit" }
+  | { type: "stopEdit" };
 
-export const initialForm = (qs: Question[]): FormState => ({ qi: 0, cursors: {}, selections: {}, others: {}, editing: qs[0] ? qs[0].options.length === 0 : false });
+export const initialForm = (qs: Question[]): FormState => {
+  const rows = buildRows(qs);
+  const firstOpen = rows.findIndex((r) => r.kind !== "submit" && !isAnswered(qs[r.q]!, r.q, {}, {}));
+  return { cursor: Math.max(0, firstOpen), selections: {}, others: {}, editing: null };
+};
 
-const isTextOnly = (q: Question) => q.options.length === 0;
-const otherRow = (q: Question) => (q.allowOther && q.options.length > 0 ? q.options.length : -1);
-
-/** Moves to a question; a text-only one starts in its input. */
-function goTo(qs: Question[], s: FormState, qi: number): FormState {
-  const i = Math.max(0, Math.min(qs.length - 1, qi));
-  return { ...s, qi: i, editing: isTextOnly(qs[i]!) };
+/** First row of the next question that still needs an answer, else the submit row. */
+export function nextRow(qs: Question[], rows: Row[], from: number, s: FormState): number {
+  for (let i = from; i < rows.length; i++) {
+    const r = rows[i]!;
+    if (r.q < 0) return rows.length - 1;
+    if (!isAnswered(qs[r.q]!, r.q, s.selections, s.others)) return i;
+  }
+  return rows.length - 1;
 }
 
-function pick(q: Question, s: FormState, index: number): FormState {
-  if (index < 0 || index >= q.options.length) return s;
-  const current = new Set(s.selections[s.qi] ?? []);
+const firstRowOfQuestion = (rows: Row[], q: number) => Math.max(0, rows.findIndex((r) => r.q === q));
+
+function choose(qs: Question[], s: FormState, rows: Row[], row: Row, advance: boolean): FormState {
+  const q = qs[row.q]!;
+  if (row.kind === "other") return { ...s, editing: row.q };
+  if (row.kind === "submit") return s;
+  const current = new Set(s.selections[row.q] ?? []);
   if (q.multiSelect) {
-    if (!current.delete(index)) current.add(index);
-    return { ...s, selections: { ...s.selections, [s.qi]: current } };
+    if (!current.delete(row.option)) current.add(row.option);
+    return { ...s, selections: { ...s.selections, [row.q]: current } };
   }
   // Single-select: a pick and a typed answer replace each other.
-  const { [s.qi]: _drop, ...others } = s.others;
-  return { ...s, selections: { ...s.selections, [s.qi]: new Set([index]) }, others, cursors: { ...s.cursors, [s.qi]: index } };
+  const { [row.q]: _drop, ...others } = s.others;
+  const next: FormState = { ...s, selections: { ...s.selections, [row.q]: new Set([row.option]) }, others };
+  return advance ? { ...next, cursor: nextRow(qs, rows, firstRowOfQuestion(rows, row.q) + 1, next), editing: null } : next;
 }
 
-export function reduceForm(qs: Question[], s: FormState, e: FormEvent): { state: FormState; submit: boolean } {
-  const q = qs[s.qi];
-  if (!q) return { state: s, submit: false };
+export function reduceForm(qs: Question[], s: FormState, e: FormEvent, rows: Row[] = buildRows(qs)): { state: FormState; submit: boolean } {
   const done = (state: FormState) => ({ state, submit: false });
+  const row = rows[s.cursor];
   switch (e.type) {
-    case "move": {
-      const max = Math.max(0, rowCount(q) - 1);
-      const next = Math.max(0, Math.min(max, (s.cursors[s.qi] ?? 0) + e.delta));
-      return done({ ...s, cursors: { ...s.cursors, [s.qi]: next } });
+    case "move": return done({ ...s, cursor: Math.max(0, Math.min(rows.length - 1, s.cursor + e.delta)), editing: null });
+    case "pick": {
+      const index = e.row ?? s.cursor;
+      const at = rows[index];
+      if (!at) return done(s);
+      const next = choose(qs, s, rows, at, true);
+      // A single-choice pick has already moved the cursor on; everything else stays on the row.
+      return done({ ...next, cursor: at.kind === "option" && !qs[at.q]!.multiSelect ? next.cursor : index });
     }
-    case "pick": return done(pick(q, s, e.index));
     case "toggle": {
-      const at = s.cursors[s.qi] ?? 0;
-      return at === otherRow(q) ? done({ ...s, editing: true }) : done(pick(q, s, at));
+      if (!row || s.editing !== null) return done(s);
+      return done(choose(qs, s, rows, row, false));
     }
-    case "edit": return done({ ...s, editing: true });
+    case "edit": {
+      if (!row || row.kind !== "other") return done(s);
+      return done({ ...s, editing: row.q });
+    }
+    case "stopEdit": return done({ ...s, editing: null });
     case "typed": {
-      const others = { ...s.others, [s.qi]: e.text };
+      if (s.editing === null) return done(s);
+      const q = qs[s.editing]!;
       // Single-select: typing an answer drops the picked option.
-      const selections = !q.multiSelect && e.text.length > 0 ? { ...s.selections, [s.qi]: new Set<number>() } : s.selections;
-      return done({ ...s, others, selections });
+      const selections = !q.multiSelect && e.text.length > 0 ? { ...s.selections, [s.editing]: new Set<number>() } : s.selections;
+      return done({ ...s, others: { ...s.others, [s.editing]: e.text }, selections });
     }
-    case "question": return done(goTo(qs, s, s.qi + e.delta));
     case "confirm": {
-      const at = s.cursors[s.qi] ?? 0;
-      if (!s.editing && at === otherRow(q)) return done({ ...s, editing: true });
-      let state: FormState = { ...s, editing: isTextOnly(q) ? s.editing : false };
-      // Enter on an option with nothing chosen yet chooses it.
-      if (!state.editing && (state.selections[s.qi]?.size ?? 0) === 0 && at < q.options.length && !(state.others[s.qi]?.trim())) state = pick(q, state, at);
-      if (!isAnswered(q, s.qi, state.selections, state.others)) return done(state);
-      if (s.qi < qs.length - 1) return done(goTo(qs, state, s.qi + 1));
-      const firstOpen = qs.findIndex((x, i) => !isAnswered(x, i, state.selections, state.others));
-      return firstOpen >= 0 ? done(goTo(qs, state, firstOpen)) : { state, submit: true };
+      if (row?.kind === "submit") {
+        if (!allAnswered(qs, s.selections, s.others)) {
+          // Jump to the first thing still missing instead of failing silently.
+          const missing = rows.findIndex((r) => r.kind !== "submit" && !isAnswered(qs[r.q]!, r.q, s.selections, s.others));
+          return done({ ...s, cursor: Math.max(0, missing), editing: null });
+        }
+        return { state: s, submit: true };
+      }
+      if (!row) return done(s);
+      if (s.editing !== null) {
+        // Enter in the inline text field answers that question and moves on.
+        const next: FormState = { ...s, editing: null };
+        return done({ ...next, cursor: nextRow(qs, rows, firstRowOfQuestion(rows, row.q) + 1, next) });
+      }
+      if (row.kind === "other") return done({ ...s, editing: row.q });
+      return done(choose(qs, s, rows, row, true));
     }
   }
 }

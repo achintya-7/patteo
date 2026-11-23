@@ -11,7 +11,7 @@ import { PermissionsModal } from "../src/ui/modals/PermissionsModal";
 import { WorkspacePane } from "../src/ui/workspace/WorkspacePane";
 import { QuestionForm } from "../src/ui/modals/QuestionForm";
 import {
-  allAnswered, buildAnswers, dismissAnswersEmpty, initialForm, isAnswered, parseQuestions, reduceForm, rowCount,
+  allAnswered, buildAnswers, buildRows, dismissAnswersEmpty, initialForm, isAnswered, parseQuestions, reduceForm,
   type FormEvent, type Question,
 } from "../src/ui/modals/question-model";
 
@@ -23,7 +23,11 @@ const input = {
 };
 const qs = parseQuestions(input)!;
 const run = (events: FormEvent[], questions: Question[] = qs) =>
-  events.reduce((acc, e) => ({ ...reduceForm(questions, acc.state, e), submitted: acc.submitted }), { state: initialForm(questions), submit: false, submitted: false } as { state: ReturnType<typeof initialForm>; submit: boolean; submitted: boolean });
+  events.reduce(
+    (acc, e) => ({ ...reduceForm(questions, acc.state, e), submitted: acc.submitted }),
+    { state: initialForm(questions), submit: false, submitted: false } as { state: ReturnType<typeof initialForm>; submit: boolean; submitted: boolean },
+  );
+const row = (state: ReturnType<typeof initialForm>, questions: Question[] = qs) => buildRows(questions)[state.cursor]!;
 
 describe("question model", () => {
   test("parses Desktop's form shape and refuses malformed input", () => {
@@ -52,47 +56,64 @@ describe("question model", () => {
     expect(buildAnswers(free, {}, {})).toEqual({ Notes: "" });
     expect(dismissAnswersEmpty(free)).toBe(true);
     expect(dismissAnswersEmpty(qs)).toBe(false);
-    expect(rowCount(qs[0]!)).toBe(2);
-    expect(rowCount(qs[1]!)).toBe(4); // three options + "Other…"
   });
 
-  test("single-select: a digit picks and moves on; Enter on the last answered question submits", () => {
-    let r = run([{ type: "pick", index: 1 }, { type: "confirm" }]);
-    expect(r.state.qi).toBe(1);
+  test("every question and its options are one flat list, ending with submit", () => {
+    expect(buildRows(qs).map((r) => `${r.q}:${r.kind}${r.kind === "option" ? r.option : ""}`)).toEqual([
+      "0:option0", "0:option1", // Database
+      "1:option0", "1:option1", "1:option2", "1:other", // Features (allows "other")
+      "-1:submit",
+    ]);
+    const single = parseQuestions({ questions: [{ question: "q", header: "Only", options: [{ label: "A" }] }] })!;
+    expect(buildRows(single).map((r) => r.kind)).toEqual(["option", "submit"]); // no "other" row unless allowed
+    const textOnly = parseQuestions({ questions: [{ question: "q", header: "Name", options: [] }] })!;
+    expect(buildRows(textOnly).map((r) => r.kind)).toEqual(["other", "submit"]); // a text question is just its field
+    expect(initialForm(qs).cursor).toBe(0);
+  });
+
+  test("picking a single-choice option moves the cursor to the next unanswered question", () => {
+    const r = run([{ type: "pick", row: 1 }]); // SQLite
     expect([...r.state.selections[0]!]).toEqual([1]);
+    expect(row(r.state).q).toBe(1); // straight to Features, cursor on its first option
+    expect(row(r.state).kind).toBe("option");
+    // A multi-choice pick only toggles and stays put.
+    const m = run([{ type: "pick", row: 1 }, { type: "pick", row: 2 }, { type: "pick", row: 3 }]);
+    expect([...m.state.selections[1]!]).toEqual([0, 1]);
+    expect(row(m.state).q).toBe(1);
+  });
+
+  test("'Other' opens in place; typing answers it and Enter carries on to the submit row", () => {
+    const editing = run([{ type: "pick", row: 1 }, { type: "pick", row: 5 }]); // Features → "Something else…"
+    expect(editing.state.editing).toBe(1);
+    expect(editing.state.cursor).toBe(5);
+    const typed = run([{ type: "pick", row: 1 }, { type: "pick", row: 5 }, { type: "typed", text: "Metrics" }, { type: "confirm" }]);
+    expect(typed.state.editing).toBeNull();
+    expect(typed.state.others[1]).toBe("Metrics");
+    expect(row(typed.state).kind).toBe("submit");
+    expect(typed.submit).toBe(false); // Enter closed the field, it did not send yet
+    const sent = run([{ type: "pick", row: 1 }, { type: "pick", row: 5 }, { type: "typed", text: "Metrics" }, { type: "confirm" }, { type: "confirm" }]);
+    expect(sent.submit).toBe(true);
+  });
+
+  test("the submit row refuses an incomplete form and jumps to what is missing", () => {
+    const rows = buildRows(qs);
+    const atSubmit = { ...initialForm(qs), cursor: rows.length - 1 };
+    const r = reduceForm(qs, atSubmit, { type: "confirm" }, rows);
     expect(r.submit).toBe(false);
-    r = run([{ type: "pick", index: 1 }, { type: "confirm" }, { type: "toggle" }, { type: "confirm" }]); // Auth chosen on the multi question
-    expect(r.submit).toBe(true);
+    expect(r.state.cursor).toBe(0); // back to the first unanswered control
+    const done = reduceForm(qs, { ...atSubmit, selections: { 0: new Set([0]), 1: new Set([2]) } }, { type: "confirm" }, rows);
+    expect(done.submit).toBe(true);
   });
 
-  test("Enter on an option with nothing chosen chooses it; an unanswered Enter stays put", () => {
-    const r = run([{ type: "move", delta: 1 }, { type: "confirm" }]);
-    expect([...r.state.selections[0]!]).toEqual([1]);
-    expect(r.state.qi).toBe(1);
-    // On the last question Enter picks the cursor row, but the first question is still open:
-    // the form sends you back to it instead of submitting.
-    const stay = run([{ type: "question", delta: 1 }, { type: "confirm" }]);
-    expect(stay.state.qi).toBe(0);
-    expect(stay.submit).toBe(false);
-  });
-
-  test("multi-select toggles; the Other row opens the text input; typing replaces a single pick", () => {
-    let r = run([{ type: "question", delta: 1 }, { type: "toggle" }, { type: "move", delta: 1 }, { type: "toggle" }, { type: "toggle" }]);
-    expect([...r.state.selections[1]!]).toEqual([0]); // Auth on, Billing on then off
-    r = run([{ type: "question", delta: 1 }, { type: "move", delta: 3 }, { type: "toggle" }]);
-    expect(r.state.editing).toBe(true);
-    r = run([{ type: "pick", index: 0 }, { type: "typed", text: "DuckDB" }]);
-    expect(r.state.selections[0]!.size).toBe(0);
-    expect(r.state.others[0]).toBe("DuckDB");
-    r = run([{ type: "typed", text: "DuckDB" }, { type: "pick", index: 0 }]);
-    expect(r.state.others[0]).toBeUndefined(); // picking drops the typed answer
-  });
-
-  test("a text-only question starts in its input and Enter answers it", () => {
+  test("a text-only question starts on its own field", () => {
     const free = parseQuestions({ questions: [{ question: "Name?", header: "Name", options: [] }] })!;
-    expect(initialForm(free).editing).toBe(true);
-    expect(run([{ type: "confirm" }], free).submit).toBe(false); // empty is not an answer
-    expect(run([{ type: "typed", text: "Ada" }, { type: "confirm" }], free).submit).toBe(true);
+    const empty = run([{ type: "confirm" }], free); // Enter opens the field
+    expect(empty.state.editing).toBe(0);
+    const blank = run([{ type: "typed", text: "   " }, { type: "confirm" }], free);
+    expect(blank.submit).toBe(false);
+    const answered = run([{ type: "confirm" }, { type: "typed", text: "Ada" }, { type: "confirm" }, { type: "confirm" }], free);
+    expect(answered.state.editing).toBeNull();
+    expect(answered.submit).toBe(true);
   });
 });
 
@@ -111,7 +132,7 @@ describe("question form", () => {
           <AppContext.Provider value={{ store, ui, runtimes: {} as never, settings }}>
             <QuestionForm questions={extra.questions ?? qs} input={extra.input ?? input} agentTitle="Backend agent" busy={false} error={null} onRespond={(response, label) => { responses.push({ response, label }); }} />
           </AppContext.Provider>,
-          { width: 100, height: 28 },
+          { width: 100, height: 34 },
         );
         await t.renderOnce();
         const settle = async () => { await Bun.sleep(20); await t.renderOnce(); };
@@ -120,62 +141,75 @@ describe("question form", () => {
     };
   }
 
-  test("shows the agent, the question, the options with their descriptions, and progress", async () => {
+  test("every question is on screen at once, before answering anything", async () => {
     const m = mount();
     const { t, done } = await m.render();
     try {
       const frame = t.captureCharFrame();
-      for (const s of ["from Backend agent", "Which database should we use?", "1. Postgres", "Relational", "2. SQLite", "Embedded", "○ Database", "○ Features", "0/2 answered"]) expect(frame).toContain(s);
+      for (const s of [
+        "from Backend agent", "0/2 answered",
+        "1. Database", "Which database should we use?", "1. Postgres", "Relational", "2. SQLite", "Embedded",
+        "2. Features", "Which features do you want?", "1. Auth", "2. Billing", "3. Search", "Something else…",
+        "Send answers",
+      ]) expect(frame).toContain(s);
     } finally {
       done();
     }
   });
 
-  test("answers every question and sends them as updatedInput.answers", async () => {
+  test("answering the first question moves the caret to the second by itself", async () => {
     const m = mount();
     const { t, settle, done } = await m.render();
     try {
-      t.mockInput.pressKey("2"); // SQLite, moves on
+      t.mockInput.pressKey("2"); // SQLite
       await settle();
-      expect(t.captureCharFrame()).toContain("Which features do you want?");
-      t.mockInput.pressKey("1"); // Auth (multi: toggles)
-      t.mockInput.pressKey("3"); // Search
+      const lines = t.captureCharFrame().split("\n");
+      const marked = lines.find((l) => l.includes("▌"));
+      expect(marked).toContain("1. Auth"); // the caret is on the next question, not still on Database
+      expect(lines.some((l) => l.includes("✔ 1. Database"))).toBe(true);
+      expect(t.captureCharFrame()).toContain("1/2 answered");
+    } finally {
+      done();
+    }
+  });
+
+  test("'Other' shows a text field inside the popup and the answer is sent from there", async () => {
+    const m = mount();
+    const { t, settle, done } = await m.render();
+    try {
+      t.mockInput.pressKey("1"); // Postgres
       await settle();
-      expect(m.responses).toEqual([]);
-      t.mockInput.pressEnter(); // last question answered: send
+      for (let i = 0; i < 3; i++) { t.mockInput.pressKey("j"); } // Features 1, 2, then "Something else…"
+      await settle();
+      t.mockInput.pressEnter();
+      await settle();
+      const frame = t.captureCharFrame(); // the field is drawn in place, same popup
+      expect(frame).toContain("Question");
+      expect(frame).toContain("1. Database"); // the other question is still there while typing
+      for (const ch of "Metrics") t.mockInput.pressKey(ch);
+      await settle();
+      expect(t.captureCharFrame()).toContain("Metrics");
+      t.mockInput.pressEnter(); // closes the field, moves on
+      await settle();
+      t.mockInput.pressEnter(); // on the submit row
       await settle();
       expect(m.responses).toEqual([
-        { label: "Answered", response: { behavior: "allow", updatedInput: { ...input, answers: { Database: "SQLite", Features: "Auth, Search" } } } },
+        { label: "Answered", response: { behavior: "allow", updatedInput: { ...input, answers: { Database: "Postgres", Features: "Metrics" } } } },
       ]);
     } finally {
       done();
     }
   });
 
-  test("a typed answer through Other, and d dismisses without answering", async () => {
+  test("d dismisses without answering", async () => {
     const m = mount();
     const { t, settle, done } = await m.render();
     try {
-      t.mockInput.pressKey("1");
+      t.mockInput.pressKey("d");
       await settle();
-      t.mockInput.pressKey("o"); // free-text answer for the multi question
-      await settle();
-      for (const ch of "Metrics") t.mockInput.pressKey(ch);
-      await settle();
-      t.mockInput.pressEnter();
-      await settle();
-      expect(m.responses.at(-1)!.response).toMatchObject({ behavior: "allow", updatedInput: { answers: { Database: "Postgres", Features: "Metrics" } } });
+      expect(m.responses).toEqual([{ label: "Dismissed", response: { behavior: "deny", message: "Dismissed by user" } }]);
     } finally {
       done();
-    }
-    const n = mount();
-    const b = await n.render();
-    try {
-      b.t.mockInput.pressKey("d");
-      await b.settle();
-      expect(n.responses).toEqual([{ label: "Dismissed", response: { behavior: "deny", message: "Dismissed by user" } }]);
-    } finally {
-      b.done();
     }
   });
 });
@@ -207,9 +241,11 @@ describe("question in the permissions modal and the pending bar", () => {
     const { t, settle, done } = await mount(h, <PermissionsModal />);
     try {
       expect(t.captureCharFrame()).toContain("Which database should we use?");
-      t.mockInput.pressKey("1");
+      t.mockInput.pressKey("1"); // Postgres, moves on to the next question
       await settle();
-      t.mockInput.pressKey("2");
+      t.mockInput.pressKey("2"); // Billing
+      await settle();
+      for (let i = 0; i < 3; i++) { t.mockInput.pressKey("j"); } // past the last option and "Something else…" to the submit row
       await settle();
       t.mockInput.pressEnter();
       await settle();

@@ -302,6 +302,13 @@ const SCENES: Record<string, Scene> = {
       s.ui.actions.openPanel("pr");
     },
   },
+  "question-bar": {
+    theme: "catppuccin-mocha", width: 124, height: 30, title: "patteo: an agent needs an answer",
+    setup(s) {
+      seed(s, { workspace: "w-flaky", agent: "a-flaky" });
+      s.ui.actions.setFocus("main");
+    },
+  },
   question: {
     theme: "nord", width: 124, height: 34, title: "patteo: an agent asks",
     setup(s) {

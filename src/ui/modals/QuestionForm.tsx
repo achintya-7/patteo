@@ -1,22 +1,28 @@
 /**
- * An agent's question as a form: pick an option (or several), type your own answer, step
- * through several questions, submit. The interaction lives in `reduceForm`; this draws it
- * and maps keys to events.
+ * An agent's questions as one form: every question and its options are listed together, so you
+ * can see the whole thing before answering. Picking an option on a single-choice question moves
+ * the cursor to the next unanswered one by itself; "Other" opens a text field in place.
  */
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentPermissionResponse } from "@getpaseo/protocol/agent-types";
 import { useTheme } from "../../theme/theme";
 import { truncate } from "../text";
 import { wrapText } from "../explorer/pr-model";
+import { keepVisible } from "../explorer/window";
 import { Overlay } from "./Overlay";
 import {
-  allAnswered, buildAnswers, dismissAnswersEmpty, dismissLabel, initialForm, isAnswered, reduceForm, showsTextInput,
-  type FormEvent, type Question,
+  allAnswered, buildRows, buildAnswers, dismissAnswersEmpty, dismissLabel, initialForm, isAnswered, reduceForm, showsTextInput,
+  type FormEvent, type FormState, type Question, type Row,
 } from "./question-model";
 
-const MAX_PREVIEW = 6;
+/** One line of the drawn form; `cursor` ties it back to a row of the model. */
+interface Item {
+  node: ReactNode;
+  /** Row index this line draws, when it is a control. */
+  cursor: number | null;
+}
 
 export function QuestionForm({ questions, input, agentTitle, busy, error, onRespond, footerExtra }: {
   questions: Question[];
@@ -31,162 +37,179 @@ export function QuestionForm({ questions, input, agentTitle, busy, error, onResp
   const t = useTheme();
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
   const [form, setFormState] = useState(() => initialForm(questions));
+  const [start, setStart] = useState(0);
+  const rows = useMemo(() => buildRows(questions), [questions]);
   // Keys can outrun a re-render; handlers read the latest state from here.
-  const live = useRef(form);
-  const apply = (e: FormEvent) => {
-    const { state, submit } = reduceForm(questions, live.current, e);
-    live.current = state;
-    setFormState(state);
-    if (submit) void respond();
-  };
+  const live = useRef<FormState>(form);
+  live.current = form;
 
-  const respond = () => {
-    const s = live.current;
-    onRespond({ behavior: "allow", updatedInput: { ...input, answers: buildAnswers(questions, s.selections, s.others) } } as AgentPermissionResponse, "Answered");
+  const respond = (state: FormState) => {
+    onRespond({ behavior: "allow", updatedInput: { ...input, answers: buildAnswers(questions, state.selections, state.others) } } as AgentPermissionResponse, "Answered");
   };
   const dismiss = () => {
-    if (dismissAnswersEmpty(questions)) return respond();
+    if (dismissAnswersEmpty(questions)) return respond(live.current);
     onRespond({ behavior: "deny", message: "Dismissed by user" }, "Dismissed");
   };
+  const apply = (e: FormEvent) => {
+    const { state, submit } = reduceForm(questions, live.current, e, rows);
+    live.current = state;
+    setFormState(state);
+    if (submit) void respond(state);
+  };
 
+  const editingQuestion = form.editing === null ? null : questions[form.editing];
   useKeyboard((k) => {
     if (busy) return;
-    const s = live.current;
-    const q = questions[s.qi]!;
-    if (s.editing) {
-      // The input owns text; Enter finishes the answer.
+    if (editingQuestion) {
+      // The inline field owns typing; Esc puts it away without losing what you typed.
+      if (k.name === "escape") return apply({ type: "stopEdit" });
       if (k.name === "return") return apply({ type: "confirm" });
-      if (k.name === "escape" && q.options.length > 0) {
-        live.current = { ...s, editing: false };
-        return setFormState(live.current);
-      }
       return;
     }
     if (k.name === "j" || k.name === "down") return apply({ type: "move", delta: 1 });
     if (k.name === "k" || k.name === "up") return apply({ type: "move", delta: -1 });
     if (k.name === "space") return apply({ type: "toggle" });
     if (k.name === "return") return apply({ type: "confirm" });
-    if (k.name === "tab" || k.name === "right" || k.name === "l") return apply({ type: "question", delta: 1 });
-    if (k.name === "left" || k.name === "h") return apply({ type: "question", delta: -1 });
-    if (k.name === "o" && showsTextInput(q)) return apply({ type: "edit" });
+    if (k.name === "o") return apply({ type: "edit" });
     if (k.name === "d") return dismiss();
     if (/^[1-9]$/.test(k.name)) {
+      // Digits pick an option of the question the cursor is in.
+      const row = rows[form.cursor];
+      const q = row ? questions[row.q] : undefined;
       const n = Number(k.name) - 1;
-      if (n >= q.options.length) return;
-      apply({ type: "pick", index: n });
-      // A single-select pick is the answer: move on (or submit) right away.
-      if (!q.multiSelect) apply({ type: "confirm" });
+      if (!q || n >= q.options.length) return;
+      const at = rows.findIndex((r) => r.q === row!.q && r.kind === "option" && r.option === n);
+      if (at >= 0) apply({ type: "pick", row: at });
     }
   });
 
-  const q = questions[Math.min(form.qi, questions.length - 1)]!;
-  const width = Math.min(86, termWidth - 4);
+  const width = Math.min(88, termWidth - 4);
   const inner = width - 4;
-  const cursor = form.cursors[form.qi] ?? 0;
-  const selected = form.selections[form.qi] ?? new Set<number>();
-  const questionLines = useMemo(() => wrapText(q.question, inner), [q.question, inner]);
-  const other = form.others[form.qi] ?? "";
-  const withOther = q.allowOther && q.options.length > 0;
-  const current = q.options[cursor];
-  const preview = current?.preview ? current.preview.split("\n").slice(0, MAX_PREVIEW) : [];
-  const answered = allAnswered(questions, form.selections, form.others);
+  const gutter = 4;
 
-  const optionLines = q.options.reduce((n, o) => n + 1 + (o.description ? 1 : 0), 0) + (withOther ? 1 : 0);
-  const textInputRows = q.options.length === 0 || form.editing ? 3 : 0;
-  const wanted = 6 + (questions.length > 1 ? 1 : 0) + questionLines.length + optionLines + textInputRows + (preview.length ? preview.length + 2 : 0) + (error ? 1 : 0);
-  const height = Math.min(termHeight - 2, Math.max(10, wanted + 2));
+  // Draw order: every question with its options, then the submit line. Each item is one row tall.
+  const items: Item[] = [];
+  const push = (node: ReactNode) => items.push({ node, cursor: null });
+  questions.forEach((q, qi) => {
+    const done = isAnswered(q, qi, form.selections, form.others);
+    const active = rows[form.cursor]?.q === qi;
+    push(
+      <text key={`h${qi}`} wrapMode="none">
+        <span fg={done ? t.success : active ? t.accent : t.subtle} attributes={TextAttributes.BOLD}>
+          {`${done ? "✔" : active ? "▸" : "·"} ${qi + 1}. ${truncate(q.header, inner - 6)}`}
+        </span>
+        {q.multiSelect ? <span fg={t.subtle}>{"  pick any"}</span> : null}
+      </text>,
+    );
+    for (const [i, line] of wrapText(q.question, inner - gutter).entries()) {
+      push(<text key={`q${qi}:${i}`} fg={t.text} wrapMode="none">{line}</text>);
+    }
+    push(<text key={`s${qi}`} fg={t.subtle}>{" "}</text>);
 
-  // Hints in priority order; the border only has room for so many.
-  const hints = form.editing
-    ? ["type your answer", "⏎ done", ...(q.options.length ? ["esc back"] : [])]
-    : [
-        q.multiSelect ? "␣ toggle" : "⏎ choose",
-        "↑↓ move",
-        "1-9 pick",
-        ...(showsTextInput(q) && q.options.length ? ["o other"] : []),
-        ...(questions.length > 1 ? ["←→ question"] : []),
-        `d ${dismissLabel(questions).toLowerCase()}`,
-        "esc later",
-        ...(footerExtra ? [footerExtra.replace(/^ · /, "")] : []),
-      ];
-  let shown = hints.join(" · ");
-  for (let n = hints.length; shown.length > width - 8 && n > 1; n--) shown = hints.slice(0, n - 1).join(" · ");
-  const footer = busy ? "sending…" : shown;
-
-  return (
-    <Overlay title="Question" width={86} height={height} footer={footer}>
-      <text fg={t.subtle} wrapMode="none">{truncate(`from ${agentTitle}`, inner)}</text>
-      {questions.length > 1 ? (
-        <box height={1} flexShrink={0}>
-          <text wrapMode="none">
-            {questions.map((x, i) => {
-              const on = i === form.qi;
-              const ok = isAnswered(x, i, form.selections, form.others);
-              return (
-                <span key={i} fg={on ? t.accent : ok ? t.success : t.subtle} attributes={on ? TextAttributes.BOLD : TextAttributes.NONE}>
-                  {`${ok ? "●" : "○"} ${truncate(x.header, 14)}   `}
-                </span>
-              );
-            })}
-          </text>
-        </box>
-      ) : null}
-      <box height={1} />
-      {questionLines.map((l, i) => (
-        <text key={i} fg={t.text} attributes={TextAttributes.BOLD} wrapMode="none">{l}</text>
-      ))}
-      <box height={1} />
-      {q.options.map((o, i) => {
-        const on = i === cursor && !form.editing;
-        const chosen = selected.has(i);
-        const mark = q.multiSelect ? (chosen ? "☑" : "☐") : chosen ? "◉" : "○";
-        return (
-          <box key={i} flexDirection="column" flexShrink={0} backgroundColor={on ? t.element : undefined}>
+    const chosen = form.selections[qi] ?? new Set<number>();
+    rows.forEach((r, index) => {
+      if (r.q !== qi) return;
+      const on = form.cursor === index && !form.editing;
+      if (r.kind === "option") {
+        const o = q.options[r.option]!;
+        const picked = chosen.has(r.option);
+        items.push({
+          cursor: index,
+          node: (
+            <box key={`o${qi}:${r.option}`} flexDirection="column" flexShrink={0} backgroundColor={on ? t.element : undefined}>
+              <text wrapMode="none">
+                <span fg={on ? t.accent : t.subtle}>{on ? "▌" : " "}</span>
+                <span fg={picked ? t.success : t.subtle}>{` ${q.multiSelect ? (picked ? "☑" : "☐") : picked ? "◉" : "○"} `}</span>
+                <span fg={on ? t.text : t.muted} attributes={picked ? TextAttributes.BOLD : TextAttributes.NONE}>{truncate(`${r.option + 1}. ${o.label}`, inner - 6)}</span>
+                {o.description ? <span fg={t.subtle}>{`  ${truncate(o.description, Math.max(0, inner - 10 - [...o.label].length))}`}</span> : null}
+              </text>
+            </box>
+          ),
+        });
+        return;
+      }
+      // "Other": the answer is written right here, on this line, when it is open.
+      const text = form.others[qi] ?? "";
+      const open = form.editing === qi;
+      const hasOptions = q.options.length > 0;
+      if (open) {
+        items.push({
+          cursor: index,
+          node: (
+            <box key={`t${qi}`} border borderStyle="rounded" borderColor={t.accent} height={3} paddingLeft={1} flexShrink={0}>
+              <input
+                focused={!busy}
+                value={text}
+                placeholder={q.placeholder ?? "Type your answer"}
+                onInput={(v: string) => apply({ type: "typed", text: v })}
+                textColor={t.text}
+                placeholderColor={t.subtle}
+                backgroundColor={t.overlay}
+                focusedBackgroundColor={t.overlay}
+                cursorColor={t.accent}
+              />
+            </box>
+          ),
+        });
+        return;
+      }
+      items.push({
+        cursor: index,
+        node: (
+          <box key={`o${qi}:other`} height={1} flexShrink={0} backgroundColor={on ? t.element : undefined}>
             <text wrapMode="none">
               <span fg={on ? t.accent : t.subtle}>{on ? "▌" : " "}</span>
-              <span fg={chosen ? t.success : t.subtle}>{` ${mark} `}</span>
-              <span fg={on ? t.text : t.muted} attributes={chosen ? TextAttributes.BOLD : TextAttributes.NONE}>{truncate(`${i + 1}. ${o.label}`, inner - 6)}</span>
+              <span fg={text.trim() ? t.success : t.subtle}>{" ✎ "}</span>
+              <span fg={text.trim() ? t.text : on ? t.text : t.muted}>
+                {text.trim() ? truncate(text, inner - 8) : hasOptions ? "Something else…" : (q.placeholder ?? "Type your answer")}
+              </span>
+              {text.trim() && hasOptions ? <span fg={t.subtle}>{"  (replaces the choice)"}</span> : null}
             </text>
-            {o.description ? <text fg={t.subtle} wrapMode="none">{`      ${truncate(o.description, inner - 8)}`}</text> : null}
           </box>
-        );
-      })}
-      {withOther ? (
-        <box height={1} flexShrink={0} backgroundColor={cursor === q.options.length && !form.editing ? t.element : undefined}>
-          <text wrapMode="none">
-            <span fg={cursor === q.options.length && !form.editing ? t.accent : t.subtle}>{cursor === q.options.length && !form.editing ? "▌" : " "}</span>
-            <span fg={other.trim() ? t.success : t.subtle}>{" ✎ "}</span>
-            <span fg={other.trim() ? t.text : t.muted}>{other.trim() ? truncate(other, inner - 8) : "Other…"}</span>
-          </text>
-        </box>
-      ) : null}
-      {q.options.length === 0 || form.editing ? (
-        <box border borderStyle="rounded" borderColor={t.accent} height={3} paddingLeft={1} flexShrink={0}>
-          <input
-            focused={!busy}
-            value={other}
-            placeholder={q.placeholder ?? "Type your answer"}
-            onInput={(v: string) => apply({ type: "typed", text: v })}
-            textColor={t.text}
-            placeholderColor={t.subtle}
-            backgroundColor={t.overlay}
-            focusedBackgroundColor={t.overlay}
-            cursorColor={t.accent}
-          />
-        </box>
-      ) : null}
-      {preview.length ? (
-        <box flexDirection="column" marginTop={1} backgroundColor={t.raised} paddingLeft={1} paddingRight={1} flexShrink={0}>
-          {preview.map((l, i) => (
-            <text key={i} fg={t.muted} wrapMode="none">{truncate(l, inner - 2) || " "}</text>
-          ))}
-        </box>
-      ) : null}
-      <box flexGrow={1} />
-      {error ? <text fg={t.error} wrapMode="none">{truncate(error, inner)}</text> : null}
-      <text wrapMode="none">
-        <span fg={answered ? t.success : t.subtle} attributes={TextAttributes.BOLD}>{answered ? "⏎ on the last question sends your answers" : `${questions.filter((x, i) => isAnswered(x, i, form.selections, form.others)).length}/${questions.length} answered`}</span>
+        ),
+      });
+    });
+    push(<text key={`g${qi}`} fg={t.subtle}>{" "}</text>);
+  });
+
+  const answered = allAnswered(questions, form.selections, form.others);
+  const submitIndex = rows.length - 1;
+  const onSubmit = form.cursor === submitIndex && form.editing === null;
+  items.push({
+    cursor: submitIndex,
+    node: (
+      <box key="submit" height={1} flexShrink={0} backgroundColor={onSubmit ? t.element : undefined}>
+        <text wrapMode="none">
+          <span fg={onSubmit ? t.accent : t.subtle}>{onSubmit ? "▌" : " "}</span>
+          <span fg={answered ? t.success : t.subtle} attributes={TextAttributes.BOLD}>{answered ? " Send answers" : " Send answers  (answer everything first)"}</span>
+        </text>
+      </box>
+    ),
+  });
+
+  const cursorItem = Math.max(0, items.findIndex((i) => i.cursor === form.cursor));
+  const view = Math.max(4, termHeight - 8);
+  const top = keepVisible(cursorItem, start, view, items.length);
+  if (top !== start) setStart(top);
+
+  const hints = editingQuestion
+    ? ["type your answer", "⏎ done", "esc cancel"]
+    : ["↑↓ move", "1-9 pick", "␣ toggle", ...(showsTextInput(questions[Math.max(0, rows[form.cursor]?.q ?? 0)]!) ? ["o other"] : []), `d ${dismissLabel(questions).toLowerCase()}`, "esc later", ...(footerExtra ? [footerExtra.replace(/^ · /, "")] : [])];
+  let footer = hints.join(" · ");
+  for (let n = hints.length; footer.length > width - 8 && n > 1; n--) footer = hints.slice(0, n - 1).join(" · ");
+
+  return (
+    <Overlay title="Question" width={88} height={Math.min(termHeight - 2, view + 5)} footer={busy ? "sending…" : footer}>
+      <text fg={t.subtle} wrapMode="none">
+        {truncate(`from ${agentTitle}`, Math.max(10, inner - 22))}
+        <span fg={t.subtle}>{`  ${questions.filter((x, i) => isAnswered(x, i, form.selections, form.others)).length}/${questions.length} answered`}</span>
       </text>
+      {items.slice(top, top + view).map((item, i) => (
+        <box key={top + i} flexShrink={0}>{item.node}</box>
+      ))}
+      {error ? <text fg={t.error} wrapMode="none">{truncate(error, inner)}</text> : null}
     </Overlay>
   );
 }
+
+export type { Row };
