@@ -1,0 +1,48 @@
+{
+  "name": "patteo",
+  "version": "0.1.0",
+  "description": "A fast, keyboard-first terminal client for Paseo",
+  "license": "Apache-2.0",
+  "author": "Achintya",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/achintya-7/patteo.git"
+  },
+  "homepage": "https://github.com/achintya-7/patteo",
+  "bugs": {
+    "url": "https://github.com/achintya-7/patteo/issues"
+  },
+  "type": "module",
+  "private": true,
+  "bin": {
+    "patteo": "dist/patteo"
+  },
+  "scripts": {
+    "dev": "bun src/index.tsx",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p .",
+    "check:runtime": "bun scripts/check-runtime.ts",
+    "check:stress": "bun scripts/stress.tsx",
+    "build": "bun build --compile --minify ./src/index.tsx --outfile dist/patteo",
+    "check:e2e": "bun scripts/e2e-agent.ts",
+    "package": "bun scripts/package.ts"
+  },
+  "dependencies": {
+    "@getpaseo/client": "0.16.1",
+    "@opentui/core": "0.9.7",
+    "@opentui/react": "0.9.7",
+    "beautiful-mermaid": "1.1.3",
+    "react": "^19.3.1",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.3.0"
+  },
+  "peerDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "patchedDependencies": {
+    "@opentui/core@0.9.7": "patches/@opentui%2Fcore@0.9.7.patch"
+  }
+}

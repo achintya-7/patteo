@@ -1,0 +1,113 @@
+diff --git a/index.bun.js b/index.bun.js
+index 449a6c86735a8b39cc63f573f7ffddfda0dae3a2..666444d43ba273f2e5a8579ef11b35310d8621ea 100644
+--- a/index.bun.js
++++ b/index.bun.js
+@@ -10909,7 +10909,7 @@ class MarkdownRenderable extends Renderable2 {
+     if (this.isDestroyed)
+       return;
+     this._shown.forEach((_, index) => {
+-      if (this._doc.blocks[index].kind === nativeConstants.OT_MD_LIST)
++      if (this._doc.blocks[index]?.kind === nativeConstants.OT_MD_LIST)
+         this.updateList(index);
+     });
+     this.requestRender();
+@@ -11034,6 +11034,8 @@ class MarkdownRenderable extends Renderable2 {
+     this.restyle();
+     this._shown.forEach((_, index) => {
+       const block = this._doc.blocks[index];
++      if (!block)
++        return;
+       const host = block.kind === nativeConstants.OT_MD_HTML || isProse(block.kind) && this.hostWrites(block);
+       if (host && !this.isHidden(index))
+         this.writeProse(index, true);
+@@ -11113,7 +11115,7 @@ class MarkdownRenderable extends Renderable2 {
+   syncLeaves() {
+     this._shown.forEach((shown, index) => {
+       const block = this._doc.blocks[index];
+-      if (!isProse(block.kind) || this.isHidden(index) || !(shown.default instanceof TextRenderable2))
++      if (!block || !isProse(block.kind) || this.isHidden(index) || !(shown.default instanceof TextRenderable2))
+         return;
+       if (this.hostWrites(block))
+         this.writeProse(index, false);
+@@ -11147,7 +11149,9 @@ class MarkdownRenderable extends Renderable2 {
+       this.updateList(list);
+     const items = new Map;
+     for (const item of refresh.items) {
+-      const list = this._doc.blocks[item].parent;
++      const list = this._doc.blocks[item]?.parent;
++      if (list === undefined)
++        continue;
+       if (!refresh.lists.has(list))
+         items.set(list, [...items.get(list) ?? [], item]);
+     }
+@@ -11548,13 +11552,18 @@ class MarkdownRenderable extends Renderable2 {
+     let count = recount ? 0 : list.count;
+     if (recount)
+       list.loose = false;
++    let complete = true;
+     for (const item of items) {
+       const shown = this._shown[item];
++      if (!shown) {
++        complete = false;
++        continue;
++      }
+       if (recount || shown.ordinal === undefined)
+         shown.ordinal = count++;
+       list.loose ||= this.isLoose(item);
+     }
+-    list.count = count;
++    list.count = complete ? count : undefined;
+     const tight = (block.flags & nativeConstants.OT_MD_BLOCK_OPEN) !== 0 ? !list.loose : (block.flags & nativeConstants.OT_MD_BLOCK_TIGHT) !== 0;
+     const gap = tight ? 0 : 1;
+     const ordered = (block.flags & nativeConstants.OT_MD_BLOCK_ORDERED) !== 0;
+@@ -11571,6 +11580,8 @@ class MarkdownRenderable extends Renderable2 {
+     const box = this._conceal ? this._taskMarkers : { unchecked: "[ ]", checked: "[x]" };
+     for (const item of items) {
+       const shown = this._shown[item];
++      if (!shown)
++        continue;
+       if (!shown.marker || !(shown.container instanceof BoxRenderable2))
+         continue;
+       const flags = this._doc.blocks[item].flags;
+diff --git a/index.node.js b/index.node.js
+index 6bfeb8ea3b385945b0ff721d498fcbc8ca6cef24..98b15e47a8c2b59650966cea1331b7c8dde0c1b8 100644
+--- a/index.node.js
++++ b/index.node.js
+@@ -10908,7 +10908,7 @@ class MarkdownRenderable extends Renderable2 {
+     if (this.isDestroyed)
+       return;
+     this._shown.forEach((_, index) => {
+-      if (this._doc.blocks[index].kind === nativeConstants.OT_MD_LIST)
++      if (this._doc.blocks[index]?.kind === nativeConstants.OT_MD_LIST)
+         this.updateList(index);
+     });
+     this.requestRender();
+@@ -11033,6 +11033,8 @@ class MarkdownRenderable extends Renderable2 {
+     this.restyle();
+     this._shown.forEach((_, index) => {
+       const block = this._doc.blocks[index];
++      if (!block)
++        return;
+       const host = block.kind === nativeConstants.OT_MD_HTML || isProse(block.kind) && this.hostWrites(block);
+       if (host && !this.isHidden(index))
+         this.writeProse(index, true);
+@@ -11112,7 +11114,7 @@ class MarkdownRenderable extends Renderable2 {
+   syncLeaves() {
+     this._shown.forEach((shown, index) => {
+       const block = this._doc.blocks[index];
+-      if (!isProse(block.kind) || this.isHidden(index) || !(shown.default instanceof TextRenderable2))
++      if (!block || !isProse(block.kind) || this.isHidden(index) || !(shown.default instanceof TextRenderable2))
+         return;
+       if (this.hostWrites(block))
+         this.writeProse(index, false);
+@@ -11146,7 +11148,9 @@ class MarkdownRenderable extends Renderable2 {
+       this.updateList(list);
+     const items = new Map;
+     for (const item of refresh.items) {
+-      const list = this._doc.blocks[item].parent;
++      const list = this._doc.blocks[item]?.parent;
++      if (list === undefined)
++        continue;
+       if (!refresh.lists.has(list))
+         items.set(list, [...items.get(list) ?? [], item]);
+     }

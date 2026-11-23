@@ -1,0 +1,8 @@
+*.log
+.DS_Store
+.release-docker
+dist
+node_modules
+.agents/
+.claude/
+skills-lock.json

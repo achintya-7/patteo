@@ -1,0 +1,181 @@
+name: Release
+
+# Push a tag like v0.2.0 (it must match "version" in package.json) to publish a release:
+# every platform's binary, checksums.txt, the Homebrew formula, and the Docker image.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  BUN_VERSION: 1.4.2
+
+jobs:
+  build:
+    name: build all platforms
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: The tag must match package.json
+        id: version
+        run: |
+          version="$(bun -e 'console.log(require("./package.json").version)')"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      # Bun cross-compiles, but every target's native OpenTUI package has to be installed.
+      - run: bun install --frozen-lockfile --os="*" --cpu="*"
+      - run: bun scripts/package.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/release/*
+          if-no-files-found: error
+
+  smoke:
+    name: runs on ${{ matrix.target }}
+    needs: build
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { target: darwin-arm64, os: macos-latest }
+          - { target: darwin-x64, os: macos-15-intel }
+          - { target: linux-x64, os: ubuntu-latest }
+          - { target: linux-arm64, os: ubuntu-24.04-arm }
+          - { target: windows-x64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: Unpack and run (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir bin && tar -xzf "release/patteo-${{ matrix.target }}.tar.gz" -C bin
+          out="$(./bin/patteo --version)"
+          echo "$out"
+          test "$out" = "patteo ${{ needs.build.outputs.version }}"
+      - name: Unpack and run (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive release/patteo-windows-x64.zip -DestinationPath bin
+          $out = (& ./bin/patteo.exe --version)
+          Write-Host $out
+          if ($out -ne "patteo ${{ needs.build.outputs.version }}") { throw "unexpected version output: $out" }
+
+  publish:
+    name: publish the release
+    needs: [build, smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "patteo ${{ needs.build.outputs.version }}" \
+            --generate-notes
+      - name: Update the Homebrew formula on main
+        run: |
+          bun scripts/update-formula.ts "${{ needs.build.outputs.version }}" release/checksums.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/patteo.rb
+          if git diff --cached --quiet; then echo "formula already current"; else
+            git commit -m "brew: patteo ${{ needs.build.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
+  docker:
+    name: docker image (ghcr.io)
+    needs: [build, smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      # The image is assembled from the binaries we already built and smoke-tested,
+      # so nothing is compiled under emulation.
+      - name: Stage the Linux binaries per architecture
+        run: |
+          for pair in amd64:x64 arm64:arm64; do
+            arch="${pair%%:*}"; target="${pair##*:}"
+            mkdir -p ".release-docker/$arch"
+            tar -xzf "release/patteo-linux-$target.tar.gz" -C ".release-docker/$arch"
+          done
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  verify-install:
+    name: install script works (${{ matrix.os }})
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install.sh
+        if: runner.os != 'Windows'
+        run: |
+          sh install.sh --dir "$RUNNER_TEMP/bin"
+          "$RUNNER_TEMP/bin/patteo" --version
+      - name: install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./install.ps1 -InstallDir "$env:RUNNER_TEMP\bin"
+          & "$env:RUNNER_TEMP\bin\patteo.exe" --version

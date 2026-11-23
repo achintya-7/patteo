@@ -1,0 +1,14 @@
+patteo
+Copyright 2026 Achintya
+
+This product is a client for Paseo (https://paseo.sh) and talks to it through the
+@getpaseo/client SDK.
+
+Parts of the code follow the structure and behavior of the Paseo app
+(https://github.com/getpaseo/paseo), Apache License 2.0, Copyright Mohamed Boudra:
+  - the timeline reducer (src/paseo/timeline.ts)
+  - the agent question form logic (src/ui/modals/question-model.ts)
+  - the sidebar and workspace tab models (src/ui/sidebar/model.ts, src/ui/workspace/tabs-model.ts)
+
+Third-party runtime dependencies keep their own licenses: OpenTUI (MIT), React (MIT),
+zustand (MIT), beautiful-mermaid (MIT).
