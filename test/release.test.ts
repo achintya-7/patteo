@@ -31,6 +31,16 @@ describe("release artifacts", () => {
     expect(() => formulaText("1.2.3", {})).toThrow("no entry for patteo-darwin-arm64.tar.gz");
   });
 
+  test("the first release can write the formula into a Formula/ directory that doesn't exist yet", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "patteo-formula-"));
+    const sums = TARGETS.filter((t) => !t.startsWith("windows")).map((t) => `${"a".repeat(64)}  patteo-${t}.tar.gz`).join("\n");
+    writeFileSync(join(dir, "checksums.txt"), `${sums}\n`);
+    const out = join(dir, "Formula", "patteo.rb");
+    const r = await $`bun ${join(root, "scripts", "update-formula.ts")} v2.0.0 ${join(dir, "checksums.txt")} --out ${out}`.nothrow().quiet();
+    expect(r.exitCode).toBe(0);
+    expect(readFileSync(out, "utf8")).toContain('version "2.0.0"');
+  });
+
   test("checksums.txt is read the way both installers read it", () => {
     const text = `${"a".repeat(64)}  patteo-linux-x64.tar.gz\n${"B".repeat(64)} *patteo-windows-x64.zip\nnot a checksum line\n`;
     expect(parseChecksums(text)).toEqual({ "patteo-linux-x64.tar.gz": "a".repeat(64), "patteo-windows-x64.zip": "b".repeat(64) });

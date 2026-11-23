@@ -100,10 +100,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" release/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "patteo ${{ needs.build.outputs.version }}" \
-            --generate-notes
+          # Idempotent: re-running a failed workflow must not trip over the release it already made.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "patteo ${{ needs.build.outputs.version }}" \
+              --generate-notes
+          fi
       - name: Update the Homebrew formula on main
         run: |
           bun scripts/update-formula.ts "${{ needs.build.outputs.version }}" release/checksums.txt

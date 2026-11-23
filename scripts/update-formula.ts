@@ -6,7 +6,8 @@
  *
  * `--base` replaces https://github.com/<repo>/releases/download/v<version> (used to test against files).
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 const REPO = "achintya-7/patteo";
@@ -68,6 +69,7 @@ if (import.meta.main) {
   const [version, checksums] = positionals;
   if (!version || !checksums) throw new Error("usage: update-formula.ts <version> <checksums.txt> [--out file] [--base url]");
   const out = values.out ?? "Formula/patteo.rb";
+  mkdirSync(dirname(out), { recursive: true }); // the first release creates Formula/
   writeFileSync(out, formulaText(version.replace(/^v/, ""), parseChecksums(readFileSync(checksums, "utf8")), values.base));
   console.log(`Wrote ${out} for ${version}`);
 }
