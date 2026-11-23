@@ -25,7 +25,8 @@
     "check:stress": "bun scripts/stress.tsx",
     "build": "bun build --compile --minify ./src/index.tsx --outfile dist/patteo",
     "check:e2e": "bun scripts/e2e-agent.ts",
-    "package": "bun scripts/package.ts"
+    "package": "bun scripts/package.ts",
+    "screenshots": "bun scripts/screenshots.tsx"
   },
   "dependencies": {
     "@getpaseo/client": "0.16.1",

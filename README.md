@@ -1,147 +1,214 @@
+<div align="center">
+
 # patteo
 
-A fast, keyboard-first terminal client for [Paseo](https://paseo.sh), built with Bun, [OpenTUI](https://opentui.com) (React) and `@getpaseo/client`.
+**[Paseo](https://paseo.sh) in your terminal.** Run and steer your coding agents, read what they changed, follow their pull requests and answer their questions, all from the keyboard.
+
+[![Release](https://img.shields.io/github/v/release/achintya-7/patteo?color=89b4fa&label=release)](https://github.com/achintya-7/patteo/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/achintya-7/patteo/ci.yml?branch=main&label=CI)](https://github.com/achintya-7/patteo/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/achintya-7/patteo?color=a6e3a1)](LICENSE)
+![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-cba6f7)
+[![Stars](https://img.shields.io/github/stars/achintya-7/patteo?style=social)](https://github.com/achintya-7/patteo/stargazers)
+
+<img src="docs/screenshots/hero.svg" alt="patteo showing a conversation with a coding agent" width="900">
+
+<sub>Screenshots use demo data. They are the real interface, rendered from the real code.</sub>
+
+</div>
+
+## Why patteo
+
+- **Everything on the keyboard.** A sidebar of projects and workspaces, a tab per agent, and a command palette (`Ctrl+K`) for the rest. Every action has a key, and none of them fire while you're typing.
+- **See what your agents did.** A Files / Changes / PR panel shows the tree, the diff against your base branch with syntax colours, and the pull request with its checks, review and merge state.
+- **Never miss a question.** When an agent stops to ask you something, or for permission, a line above the composer says so, and `p` opens a form to answer it.
+- **One self-contained binary.** A 30-45 MB download with nothing else to install: no Node, no Python. macOS, Linux and Windows.
+- **Many machines.** Connect to the daemon on your laptop, your desktop and your dev box at once, and switch with `H`.
+- **Yours to restyle.** 15 themes, a transparent background that keeps your terminal's look, and your own themes and key bindings in JSON.
+- **Private.** It talks only to the Paseo daemons you point it at. No telemetry, no accounts.
 
 ## Install
 
-**macOS and Linux** (x64 and arm64):
-
 ```bash
+# macOS and Linux
 curl -fsSL https://raw.githubusercontent.com/achintya-7/patteo/main/install.sh | sh
 ```
 
-**Windows** (PowerShell):
-
 ```powershell
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/achintya-7/patteo/main/install.ps1 | iex
 ```
 
-**Homebrew** (macOS and Linux):
-
 ```bash
-brew tap achintya-7/patteo https://github.com/achintya-7/patteo
-brew install patteo
+# Homebrew
+brew tap achintya-7/patteo https://github.com/achintya-7/patteo && brew install patteo
 ```
 
-**Docker**:
+Then start it with `patteo`. It finds the Paseo daemon on your machine by itself, so open Paseo Desktop (or run `paseo daemon`) first.
+
+<details>
+<summary><b>Docker, a specific version, uninstalling, building from source</b></summary>
+
+<br>
+
+**Docker**
 
 ```bash
 # Linux: share the host network so the container reaches the daemon on 127.0.0.1:6767
 docker run -it --rm --network host -v patteo-config:/home/patteo/.config/patteo ghcr.io/achintya-7/patteo
+
 # Docker Desktop (macOS / Windows)
 docker run -it --rm -v patteo-config:/home/patteo/.config/patteo ghcr.io/achintya-7/patteo --host host.docker.internal:6767
 ```
 
-The Paseo daemon refuses host names it doesn't know (`Invalid Host header`), so for the Docker Desktop form start the
-daemon with `PASEO_ALLOWED_HOSTS=host.docker.internal`. `docker build -t patteo .` builds the image yourself;
-`docker build --target test .` runs the typecheck and tests on Linux.
+The Paseo daemon refuses host names it doesn't know (`Invalid Host header`), so for the Docker Desktop form start the daemon with `PASEO_ALLOWED_HOSTS=host.docker.internal`. `docker build -t patteo .` builds the image yourself, and `docker build --target test .` runs the typecheck and tests on Linux.
 
-The installers download the release for your platform, verify it against `checksums.txt`, and put `patteo` in
-`~/.local/bin` (macOS/Linux) or `%LOCALAPPDATA%\patteo\bin` (Windows, added to your PATH). Options:
-`--version 0.1.0`, `--dir <path>`, `--uninstall` (`-Version`, `-InstallDir`, `-Uninstall` in PowerShell). Run the same
-command again to upgrade. The Linux binary needs glibc; on Alpine use the Docker image.
-
-Then run `patteo` with Paseo Desktop (or `paseo daemon`) running; it finds the local daemon on its own.
+**The install scripts** download the release for your platform, check it against `checksums.txt`, and put `patteo` in `~/.local/bin` (macOS and Linux) or `%LOCALAPPDATA%\patteo\bin` (Windows, added to your PATH). Options: `--version 0.1.0`, `--dir <path>`, `--uninstall` (`-Version`, `-InstallDir`, `-Uninstall` in PowerShell). Run the same command again to upgrade. The Linux binary needs glibc; on Alpine use the Docker image.
 
 **From source** (Bun 1.4+):
 
 ```bash
+git clone https://github.com/achintya-7/patteo && cd patteo
 bun install
 bun run dev                    # connect to the local daemon (~/.paseo)
 bun run dev --host box:6767    # also connect to another daemon
 bun run dev --theme gruvbox-dark
-bun run dev --opaque           # paint the theme background (default keeps your terminal's own)
 bun run build                  # single binary: dist/patteo
-bun run package                # every platform's archive + checksums.txt in dist/release
 ```
 
-## What it does
+</details>
 
-- **Workspaces sidebar**: projects ▸ workspaces with live status, branch, agent count and pending permissions.
-- **Agent tabs per workspace**, remembered across restarts.
-- **Live conversation**: your messages, the agent's markdown answers (code blocks, tables, mermaid diagrams), and its activity (thoughts, tool calls, todos) collapsed into one-line summaries once a turn ends.
-- **Files / Changes / PR panel** (`C`, on the right like Desktop; left via Settings):
-  - **Files**: the workspace's directory tree from the daemon (folders first, lazy, dotfiles toggle `.`), git markers on changed files and their folders; `⏎` opens a file in the main pane.
-  - **Changes**: what the PR contains (branch vs base) by default, `m` switches to uncommitted or all; `⏎` opens a file's diff: added/removed rows are tinted, code is syntax-coloured from the daemon's tokens (keywords, strings, functions, types…), with line numbers.
-  - **PR**: number, state, title, checks (failures first), review and merge status, URL; `o` opens it in your browser, `⏎` creates one when there is none.
-- **Composer**: grows as you type (wrapped lines count) up to half the window, then scrolls; `⏎` sends, `⌥⏎` or `^J` adds a line (a terminal sends the same CR for shift+Enter, so it cannot be told apart from Enter). Send, steer a running agent, stop a turn, switch mode or model, and slash commands (`/fork`, `/stop`, `/new`, `/model`, `/mode`, `/settings`) with suggestions while you type.
-- **Agent questions**: when an agent asks you something (Claude's AskUserQuestion and friends) a line above the composer says so (`? asks …`), a toast and the status bar (`? 1 asking · p`) flag it, and `p` opens a form: pick options (`1-9`, `⏎`, `␣` for multi-select), type your own answer (`o`), step through several questions, `d` to dismiss.
-- **New agent** (provider / model / mode / first message), **archive agent**, **permission requests** (allow / deny / provider actions).
-- **Add folder** (`A`): opens a directory as a workspace on the active daemon, with shell-style `Tab` completion (the daemon lists the directories, so it works for remote hosts), and `^G` to create the folder if it doesn't exist.
-- **Hosts**: add (`host:port` or `ws://…`), switch, rename (`e`), reconnect (`r`), remove (`d`); each row shows version, hostname and the last connection error. SSH tunnels and pairing links are not supported (they need Desktop's transport).
-- **Command palette**, **help**, **settings** with 15 built-in themes (Catppuccin, Gruvbox, GitHub, Tokyo Night, Nord, Dracula, One Dark, Rosé Pine, Solarized, Kanagawa) plus custom themes.
-- **Transparent background** by default, animated loading states (respecting "reduce motion").
+## First five minutes
+
+| Press | To |
+|---|---|
+| `Ctrl+K` | open the command palette: every action, searchable |
+| `?` | see all shortcuts |
+| `n` | start a new agent (provider, model, mode, first message) |
+| `i` | write to the agent (`Enter` sends, `Alt+Enter` adds a line, `Esc` leaves the box) |
+| `C` | open the Files / Changes / PR panel |
+| `p` | answer an agent's question or review a permission request |
+
+Arrow keys or `j`/`k` move around. `Tab` switches panes. `Esc` in the conversation stops a running turn.
+
+## What it looks like
+
+### Read what the agent changed
+
+`C` opens the panel. **Changes** lists what the pull request contains (your branch against its base), and `Enter` opens a file's diff in the main pane: added and removed rows are tinted, code is coloured by the daemon's syntax tokens, and `[` `]` step between files. `m` cycles what is compared: the PR's changes, uncommitted work, or both.
+
+<img src="docs/screenshots/changes.svg" alt="A syntax-coloured diff next to the list of changed files" width="900">
+
+### Follow the pull request
+
+The **PR** tab shows the number, state, title, every check (failures first), the review decision and the merge status. `o` opens it in your browser, and `Enter` creates a pull request when there isn't one.
+
+<img src="docs/screenshots/pr.svg" alt="The PR tab with checks, review and merge status, in a light theme" width="900">
+
+### Answer the agent when it asks
+
+When an agent asks you a question, a line above the composer and a flag in the status bar tell you, and `p` opens the form. Pick an option (`1`-`9`), tick several, or type your own answer. Several questions in one go work too.
+
+<img src="docs/screenshots/question.svg" alt="A multiple-choice question from an agent" width="900">
+
+### Browse the project
+
+The **Files** tab is the workspace's tree, listed by the daemon (so it works for remote hosts too). Changed files and the folders holding them are marked, and `.` toggles dotfiles.
+
+<img src="docs/screenshots/files.svg" alt="The Files tab with git markers on changed files" width="900">
+
+### And the rest
+
+- **Slash commands** in the composer: `/fork` to branch the conversation into a new tab, `/stop`, `/new`, `/model`, `/mode`, `/settings`.
+- **Add a folder** (`A`) as a workspace, with shell-style `Tab` completion.
+- **Many hosts** (`H`): add, rename, reconnect and switch between daemons.
+- **Live conversation** with markdown, code blocks, tables and mermaid diagrams, and the agent's activity folded into one quiet line (`e` expands it).
+- **Permission requests**: allow or deny from a dialog, with the provider's own options.
+
+## Themes
+
+15 built in: Catppuccin (4), Gruvbox (2), GitHub (2), Tokyo Night, Nord, Dracula, One Dark, Rosé Pine, Solarized Dark and Kanagawa. `T` changes the theme with a live preview. The background is transparent by default, so patteo looks like your terminal; `--opaque` paints the theme's own.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/theme-dracula.svg" alt="Dracula"></td>
+<td><img src="docs/screenshots/theme-rose-pine.svg" alt="Rosé Pine"></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/theme-kanagawa.svg" alt="Kanagawa"></td>
+<td><img src="docs/screenshots/theme-one-dark.svg" alt="One Dark"></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/theme-gruvbox-light.svg" alt="Gruvbox Light"></td>
+<td><img src="docs/screenshots/theme-solarized-dark.svg" alt="Solarized Dark"></td>
+</tr>
+</table>
 
 ## Keys
 
 | Key | Action |
 | --- | --- |
-| `^K` / `^P` | Command palette |
+| `Ctrl+K` / `Ctrl+P` | Command palette |
 | `?` | All shortcuts |
 | `,` | Settings |
-| `Tab` | Switch pane · `^B` toggle sidebar |
-| `n` / `^O` | New agent |
-| `i` / `⏎` | Write a message (from the conversation) · `Esc` back to the conversation |
-| `^X` / `Esc` | Stop the running turn (Esc in the conversation) |
-| `⇧Tab` | Next mode · `M` change model |
-| `p` | Review permission requests |
-| `C` | Files / Changes / PR panel · `[ ]` or `1 2 3` tabs · `P` jumps to the PR tab |
-| `A` | Add folder · `^G` creates it if missing |
-| `H` | Hosts: switch · `a` add · `e` rename · `r` reconnect · `d` remove |
+| `Tab` | Switch pane · `Ctrl+B` toggle the sidebar |
+| `n` / `Ctrl+O` | New agent |
+| `i` / `Enter` | Write a message (from the conversation) · `Esc` back |
+| `Ctrl+X` / `Esc` | Stop the running turn (`Esc` in the conversation) |
+| `Shift+Tab` | Next mode · `M` change model |
+| `p` | Answer questions and review permissions |
+| `C` | Files / Changes / PR panel · `[` `]` or `1` `2` `3` for tabs · `P` jumps to the PR tab |
+| `A` | Add folder · `Ctrl+G` creates it if missing |
+| `H` | Hosts: `a` add · `e` rename · `r` reconnect · `d` remove |
 | `T` | Change theme |
 | `e` / `r` | Expand activity / show thoughts |
-| `/fork` | Fork the conversation into a new tab |
 | `q` | Quit (never while typing) |
+
+Every key can be remapped, see below.
 
 ## Configuration
 
-`~/.config/patteo/`:
+Everything lives in `~/.config/patteo/`:
 
-- `config.json`: settings (also editable in the app with `,`). Remap keys with
-  `"keymap": { "palette.open": ["ctrl+space"] }`; the command ids are listed under Settings → Keyboard.
-- `themes/<name>.json`: custom themes, any subset of tokens over a base theme:
-  `{ "extends": "nord", "accent": "#ff79c6" }`.
-- `hosts.json`, `state.json`: hosts and UI state (tabs, selection).
+- `config.json`: settings, also editable in the app with `,`. Remap keys with `"keymap": { "palette.open": ["ctrl+space"] }`; the command ids are listed under Settings → Keyboard.
+- `themes/<name>.json`: your own themes, any subset of tokens over a base theme: `{ "extends": "nord", "accent": "#ff79c6" }`.
+- `hosts.json` and `state.json`: your hosts, and UI state (tabs, selection).
 
-Debug logs: `PATTEO_DEBUG=1 bun run dev`, then read `~/.config/patteo/patteo.log`.
+Debug logs: `PATTEO_DEBUG=1 patteo`, then read `~/.config/patteo/patteo.log`.
 
-## Releasing
+## FAQ
 
-Releases happen on their own: every push to `main` runs the **Release** workflow, which reads the commits since the
-last `vX.Y.Z` tag and decides.
+**Do I need Paseo?** Yes. patteo is a client: the [Paseo](https://paseo.sh) daemon runs the agents, and patteo drives it through the public `@getpaseo/client` SDK. Paseo Desktop installs the daemon.
 
-| Commits since the last release | Result |
-|---|---|
-| only docs, tests, CI or tooling | no release |
-| a change to `src/`, `patches/`, dependencies | **patch** (`0.1.0` → `0.1.1`) |
-| `feat:` / `feat(scope):` (or `[minor]`) | **minor** (`0.1.0` → `0.2.0`) |
-| `feat!:`, `BREAKING CHANGE`, or `[major]` | **major** (`0.1.0` → `1.0.0`) |
-| `[skip release]` in the message | that commit doesn't count |
+**Does it work with a daemon on another machine?** Yes: `patteo --host box:6767`, or add it with `H`. SSH tunnels and pairing links are not supported yet; use a `host:port` or `ws://` address.
 
-The strongest commit wins. A release is the exact commit that was built and tested: it builds all platforms, runs
-each binary on its own OS, publishes the GitHub release (the tag points at that commit), updates `Formula/patteo.rb`
-and `package.json` on `main`, pushes the Docker image to ghcr.io, and installs the published release on Linux, macOS
-and Windows. The version comes from the tags, so there is nothing to bump by hand.
+**Which terminals work?** Any modern terminal with true colour. patteo is developed on macOS; the Linux and Windows binaries are smoke-tested in CI on their own systems but get less everyday use, so please open an issue if something looks off. A terminal sends the same key for `Shift+Enter` and `Enter`, so a new line in the composer is `Alt+Enter` (on macOS terminals this needs "Option as Meta/Esc+") or `Ctrl+J`, which works everywhere.
 
-To release by hand (force a bump, or preview), use **Actions → Release → Run workflow**: pick `patch`, `minor` or
-`major`, or tick *dry run* to see the plan without publishing. Locally, `bun scripts/version.ts plan` prints what the
-next push would do.
+**Is the macOS binary signed?** Not yet. Installing with `curl` or Homebrew is not affected by Gatekeeper; a binary downloaded through a browser may be.
 
-## Development
+**Where does my data go?** Nowhere but the daemons you connect to. The only other network traffic is the install script, which downloads from GitHub.
+
+## Contributing
+
+Issues and pull requests are welcome.
 
 ```bash
-bun test                    # unit + render tests
+bun test                    # unit and render tests
 bun run typecheck
-bun run check:runtime       # headless smoke test against the local daemon
 bun run check:stress        # drives the real UI: resizes, dialogs, composer, all themes
-bun run check:e2e           # creates a throwaway agent (cheap model), talks to it, archives it
+bun run screenshots         # regenerates docs/screenshots from demo data
 bun scripts/frames.tsx 120 30   # print screen captures (KEYS="j,return,wait" to drive it)
 ```
 
-`patches/`: one Bun patch for `@opentui/core` 0.9.7. Its markdown renderer
-reads a list item that a streaming update hasn't shown yet (`updateList` →
-`shown.ordinal`), which crashed the agent view mid-reply. The patch guards those
-lookups; `patches/@opentui%2Fcore@0.9.7.patch` is applied by `bun install`
-(`patchedDependencies`). Drop it once upstream fixes the bug.
+Releases are automatic. Every push to `main` is considered: changes to the program release (`feat:` raises the minor version, `feat!:` or `BREAKING CHANGE` the major, anything else the patch), while docs, tests and CI don't. Add `[skip release]` to a commit message to keep it out. A release builds every platform, runs each binary on its own OS, then publishes the GitHub release, the Homebrew formula and the Docker image. To force or preview one, use Actions → Release → Run workflow.
 
-Some modules follow the structure of the Paseo app (Apache-2.0, © Mohamed Boudra).
+`patches/` holds one Bun patch for `@opentui/core` 0.9.7, whose markdown renderer crashed on a streamed list (`updateList` read an item that hadn't been shown yet). Drop it once upstream fixes the bug.
+
+## Star history
+
+If patteo saves you a trip to the browser, a ⭐ helps other people find it.
+
+[![Star History Chart](https://api.star-history.com/svg?repos=achintya-7/patteo&type=Date)](https://star-history.com/#achintya-7/patteo&Date)
+
+## License
+
+[Apache-2.0](LICENSE). patteo is an independent client built on Paseo's public SDK; some modules follow the structure of the Paseo app (Apache-2.0, © Mohamed Boudra), see [NOTICE](NOTICE). Built with [Bun](https://bun.sh), [OpenTUI](https://opentui.com) and React.
