@@ -24,7 +24,7 @@ export function normalizeFolderPath(input: string, home = homedir()): { path: st
   return { path: s.replace(/\/+$/, "") || "/" };
 }
 
-export function AddFolderModal() {
+export function AddFolderModal({ thenAgent }: { thenAgent?: boolean } = {}) {
   const t = useTheme();
   const { ui, store, runtimes } = useApp();
   const { width } = useTerminalDimensions();
@@ -36,7 +36,8 @@ export function AddFolderModal() {
   /** Directory listings, so Tab is instant after the first look. */
   const listings = useRef(new Map<string, string[]>());
 
-  const submit = async (create: boolean) => {
+  /** Opens the folder; with `agent`, also starts a new agent in it (the sidebar's "not in the list yet" case). */
+  const submit = async (create: boolean, agent = false) => {
     if (inFlight.current) return;
     const parsed = normalizeFolderPath(path);
     if ("error" in parsed) return setError(parsed.error);
@@ -50,6 +51,11 @@ export function AddFolderModal() {
       const handle = await runtime.openFolder(parsed.path, create);
       ui.actions.selectWorkspace(hostId, handle.id);
       ui.actions.setPickerOpen(false);
+      if (agent) {
+        const label = parsed.path.split("/").filter(Boolean).pop() ?? parsed.path;
+        ui.actions.openModal({ kind: "newAgent", target: { hostId, workspaceId: handle.id, cwd: parsed.path, label } });
+        return;
+      }
       ui.actions.closeModal();
       ui.actions.setFocus("main");
       ui.actions.toast(`Opened ${parsed.path}`, "success");
@@ -88,12 +94,23 @@ export function AddFolderModal() {
     if (busy) return;
     if (k.name === "escape") return ui.actions.closeModal();
     if (k.name === "tab") return void complete();
-    if (k.name === "return") return void submit(false);
+    // "New agent" from the sidebar with nothing selected lands here: the folder is the point.
+    if (k.name === "return") return void submit(false, !!thenAgent);
+    if (k.ctrl && k.name === "n") return void submit(true, true); // a folder that isn't set up yet, then an agent in it
     if (k.ctrl && k.name === "g") return void submit(true);
   });
 
   return (
-    <Overlay title="Add folder" width={Math.min(84, Math.max(52, width - 8))} height={15} footer={busy ? "opening…" : "tab complete · ⏎ open · ^G create · esc"}>
+    <Overlay
+      title="Add folder"
+      width={Math.min(84, Math.max(52, width - 8))}
+      // As tall as its content, plus room for the completion candidates when they are showing.
+      // Border (2) + label + input (3) + hint (1 with candidates, 2 without) + candidates + error.
+      height={(candidates.length ? 7 : 8)
+        + (candidates.length ? Math.min(6, candidates.length) + (candidates.length > 6 ? 1 : 0) : 0)
+        + (error ? 1 : 0)}
+      footer={busy ? "opening…" : "tab complete · ⏎ open · ^N open + new agent · ^G create · esc"}
+    >
       <text fg={t.muted} attributes={TextAttributes.BOLD}>{"Folder"}</text>
       <box border borderStyle="rounded" borderColor={t.accent} height={3} paddingLeft={1}>
         <input
@@ -112,7 +129,7 @@ export function AddFolderModal() {
         />
       </box>
       {candidates.length > 0 ? (
-        <box flexDirection="column" flexShrink={0} marginBottom={1}>
+        <box flexDirection="column" flexShrink={0}>
           {candidates.slice(0, 6).map((name) => (
             <text key={name} fg={name === candidates[0] ? t.text : t.muted} wrapMode="none">{`  ${name}/`}</text>
           ))}
@@ -123,7 +140,8 @@ export function AddFolderModal() {
         <text fg={t.error} wrapMode="word">{error}</text>
       ) : (
         <text fg={t.subtle} wrapMode="word">
-          {"The folder becomes a workspace on this daemon. A git repository gets its branches and worktrees."}
+          {/* With candidates on screen the dialog stays compact: one line instead of the explainer. */}
+          {candidates.length ? "^N opens it and starts an agent there" : "The folder becomes a workspace on this daemon. A git repository gets its branches and worktrees."}
         </text>
       )}
     </Overlay>

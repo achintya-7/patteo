@@ -3,7 +3,7 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
 import { selection } from "../../keyboard/commands";
 import { useApp, useSettings } from "../../stores/context";
-import { tabsKey } from "../../stores/ui";
+import { tabsKey, type AgentTarget } from "../../stores/ui";
 import { useTheme } from "../../theme/theme";
 import { openTab } from "../workspace/tabs-model";
 import { Skeleton, WorkingLine } from "../motion/Motion";
@@ -34,13 +34,26 @@ export function usableProviders(snapshot: unknown): ProviderInfo[] {
     }));
 }
 
-export function NewAgentModal() {
+/** Where the agent goes: an explicit target (from "new agent in this folder") or the selection. */
+export function agentTarget(
+  target: AgentTarget | undefined,
+  sel: { hostId: string | null; workspaceId?: string; workspace?: { id: string; workspaceDirectory?: string; projectRootPath?: string } },
+): { hostId: string; workspaceId: string; cwd: string | undefined; label: string } | null {
+  if (target) return { hostId: target.hostId, workspaceId: target.workspaceId, cwd: target.cwd, label: target.label };
+  if (!sel.hostId || !sel.workspace) return null;
+  const cwd = sel.workspace.workspaceDirectory ?? sel.workspace.projectRootPath;
+  const label = (cwd ?? sel.workspace.id).split("/").filter(Boolean).pop() ?? sel.workspace.id;
+  return { hostId: sel.hostId, workspaceId: sel.workspace.id, cwd, label };
+}
+
+export function NewAgentModal({ target }: { target?: AgentTarget }) {
   const t = useTheme();
   const { ui, store, runtimes } = useApp();
   const defaults = useSettings((s) => s.settings.agentDefaults);
   const { width } = useTerminalDimensions();
   const sel = selection({ ui, store });
-  const runtime = sel.hostId ? runtimes.get(sel.hostId) : undefined;
+  const where = agentTarget(target, sel);
+  const runtime = where ? runtimes.get(where.hostId) : undefined;
 
   const [providers, setProviders] = useState<ProviderInfo[] | null>(null);
   const [pi, setPi] = useState(0);
@@ -84,7 +97,7 @@ export function NewAgentModal() {
   }, [provider?.provider]);
 
   const submit = async () => {
-    if (!runtime || !provider || !sel.workspace || busy) return;
+    if (!runtime || !provider || !where || busy) return;
     const prompt = promptRef.current?.plainText.trim() ?? "";
     const model = models?.[mi]?.id;
     const mode = provider.modes[modeIdx]?.id;
@@ -92,12 +105,12 @@ export function NewAgentModal() {
     setError(null);
     try {
       const handle = await runtime.createAgent({
-        workspaceId: sel.workspace.id,
-        cwd: sel.workspace.workspaceDirectory ?? sel.workspace.projectRootPath,
+        workspaceId: where.workspaceId,
+        cwd: where.cwd,
         config: { provider: model ? `${provider.provider}/${model}` : provider.provider, ...(mode ? { modeId: mode } : {}) },
         ...(prompt ? { prompt } : {}),
       });
-      const key = tabsKey(sel.hostId!, sel.workspace.id);
+      const key = tabsKey(where.hostId, where.workspaceId);
       ui.actions.updateTabs(key, (s) => openTab(s, handle.id, { after: "active" }));
       ui.actions.setPickerOpen(false);
       ui.actions.closeModal();
@@ -164,7 +177,7 @@ export function NewAgentModal() {
   };
 
   return (
-    <Overlay title={`New agent · ${truncate(sel.workspace?.title || sel.workspace?.name || "", 30)}`} width={72} height={20} footer="tab fields · ←→ change · ⏎ start · esc cancel">
+    <Overlay title={`New agent · ${truncate(where?.label ?? "", 30)}`} width={72} height={20} footer="tab fields · ←→ change · ⏎ start · esc cancel">
       {!providers && !error ? (
         <Skeleton rows={3} width={inner} />
       ) : (

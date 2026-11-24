@@ -108,7 +108,8 @@ export const COMMANDS: Command[] = [
         payload: `${hostId}:${workspaceId}`,
       });
     } },
-  { id: "agent.new", title: "New agent…", group: "Agent", keys: ["ctrl+o", "n"], inComposer: true, when: (c) => !!selection(c).workspace, run: (c) => c.ui.actions.openModal({ kind: "newAgent" }) },
+  { id: "agent.new", title: "New agent…", group: "Agent", keys: ["ctrl+o", "n"], inComposer: true,
+    run: (c) => c.ui.actions.openModal(selection(c).workspace ? { kind: "newAgent" } : { kind: "addFolder", thenAgent: true }) },
   { id: "agent.cancel", title: "Stop the running turn", group: "Agent", keys: ["ctrl+x"], inComposer: true,
     when: (c) => selection(c).agent?.status === "running",
     run: (c) => attempt(c, () => runtimeOf(c)!.cancel(selection(c).agentId!), "Stopped") },

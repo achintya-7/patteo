@@ -1,6 +1,15 @@
 import { createStore } from "zustand/vanilla";
 import * as T from "../ui/workspace/tabs-model";
 
+/** Where a new agent should run: a workspace that may not be selected (or even loaded) yet. */
+export interface AgentTarget {
+  hostId: string;
+  workspaceId: string;
+  cwd: string;
+  /** Shown in the dialog's title; the folder's name. */
+  label: string;
+}
+
 export type FocusArea = "sidebar" | "panel" | "main" | "composer";
 
 /** Tabs of the right-hand panel: the file tree, the changes (as per the PR), the PR itself. */
@@ -11,12 +20,12 @@ export const PANEL_TABS: PanelTab[] = ["files", "changes", "pr"];
 export type Modal =
   | { kind: "palette" }
   | { kind: "help" }
-  | { kind: "newAgent" }
+  | { kind: "newAgent"; target?: AgentTarget }
   | { kind: "permissions" }
   | { kind: "hosts" }
   | { kind: "addHost" }
   | { kind: "editHost"; id: string; label: string }
-  | { kind: "addFolder" }
+  | { kind: "addFolder"; thenAgent?: boolean }
   | { kind: "settings"; section?: string }
   | { kind: "model" }
   | { kind: "mode" }

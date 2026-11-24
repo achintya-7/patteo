@@ -70,7 +70,7 @@ function ModalLayer() {
     case "help":
       return <HelpModal />;
     case "newAgent":
-      return <NewAgentModal />;
+      return <NewAgentModal target={modal.target} />;
     case "permissions":
       return <PermissionsModal />;
     case "hosts":
@@ -80,7 +80,7 @@ function ModalLayer() {
     case "editHost":
       return <EditHostModal hostId={modal.id} label={modal.label} />;
     case "addFolder":
-      return <AddFolderModal />;
+      return <AddFolderModal thenAgent={modal.thenAgent} />;
     case "settings":
       return <SettingsModal initialSection={modal.section} />;
     case "mode":

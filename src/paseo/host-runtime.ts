@@ -290,9 +290,11 @@ export class HostRuntime {
   }
 
   /** Creates an agent inside a workspace (falls back to its directory). */
-  async createAgent(opts: { workspaceId?: string; cwd: string } & Omit<PaseoAgentCreateOptions, "cwd">) {
+  /** In a workspace the agent runs there, so `cwd` is only needed when no workspace is given. */
+  async createAgent(opts: { workspaceId?: string; cwd?: string } & Omit<PaseoAgentCreateOptions, "cwd">) {
     const { workspaceId, cwd, ...rest } = opts;
     if (workspaceId) return this.api.workspaces.ref(workspaceId).agents.create(rest);
+    if (!cwd) throw new Error("createAgent needs a workspace or a cwd");
     return this.api.agents.create({ ...rest, cwd });
   }
 

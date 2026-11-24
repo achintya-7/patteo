@@ -151,7 +151,7 @@ The **Files** tab is the workspace's tree, listed by the daemon (so it works for
 | `?` | All shortcuts |
 | `,` | Settings |
 | `Tab` | Switch pane · `Ctrl+B` toggle the sidebar · **in the composer**: complete a `/` command, otherwise indent |
-| `n` / `Ctrl+O` | New agent |
+| `n` / `Ctrl+O` | New agent (pick a folder first when none is selected) |
 | `i` / `Enter` | Write a message (from the conversation) · `Esc` back |
 | `Ctrl+X` / `Esc` | Stop the running turn (`Esc` in the conversation) |
 | `Shift+Tab` | Next mode · `M` change model |

@@ -408,6 +408,7 @@ describe("composer slash commands", () => {
   });
 });
 import { AddFolderModal, normalizeFolderPath } from "../src/ui/modals/AddFolderModal";
+import { NewAgentModal, agentTarget } from "../src/ui/modals/NewAgentModal";
 
 describe("add folder", () => {
   test("paths expand ~, lose quotes and trailing slashes, and must be absolute", () => {
@@ -839,6 +840,132 @@ describe("Tab in the composer", () => {
       expect(dispatchGlobal(key("tab"))).toBe(false);
     } finally {
       done();
+    }
+  });
+});
+
+describe("a new agent in a folder that isn't in the sidebar", () => {
+  test("the target is the explicit folder when given, else the current workspace", () => {
+    expect(agentTarget({ hostId: "h", workspaceId: "w9", cwd: "/tmp/new", label: "new" }, { hostId: "h", workspace: { id: "w1", workspaceDirectory: "/repo" } }))
+      .toEqual({ hostId: "h", workspaceId: "w9", cwd: "/tmp/new", label: "new" });
+    expect(agentTarget(undefined, { hostId: "h", workspace: { id: "w1", workspaceDirectory: "/work/acme-web" } }))
+      .toEqual({ hostId: "h", workspaceId: "w1", cwd: "/work/acme-web", label: "acme-web" });
+    expect(agentTarget(undefined, { hostId: "h", workspace: { id: "w1", projectRootPath: "/work/x" } })).toMatchObject({ label: "x" });
+    expect(agentTarget(undefined, { hostId: "h" })).toBeNull();
+    expect(agentTarget(undefined, { hostId: null, workspace: { id: "w1" } })).toBeNull();
+  });
+
+  test("^N in Add folder opens the folder and then offers a new agent in it", async () => {
+    const origError = console.error;
+    console.error = () => {};
+    try {
+      const store = createSessionStore();
+      store.actions.addHost({ id: "h", label: "h", url: "ws://x/ws" });
+      store.actions.setActiveHost("h");
+      const ui = createUiStore();
+      const opened: { path: string; create: boolean }[] = [];
+      const runtimes = { get: () => ({ openFolder: async (path: string, create: boolean) => { opened.push({ path, create }); return { id: "w-new" }; } }) } as never;
+      const settings = createSettingsStore(DEFAULT_SETTINGS, [], { persist: false });
+      const t = await testRender(
+        <AppContext.Provider value={{ store, ui, runtimes, settings }}>
+          <box width={90} height={20}><AddFolderModal /></box>
+        </AppContext.Provider>,
+        { width: 90, height: 20 },
+      );
+      await t.renderOnce();
+      for (const ch of "/tmp/brand-new") t.mockInput.pressKey(ch);
+      await Bun.sleep(20);
+      await t.renderOnce();
+      t.mockInput.pressKey("n", { ctrl: true });
+      await Bun.sleep(30);
+      await t.renderOnce();
+      expect(opened).toEqual([{ path: "/tmp/brand-new", create: true }]); // a folder that doesn't exist yet
+      expect(ui.getState().modal).toEqual({ kind: "newAgent", target: { hostId: "h", workspaceId: "w-new", cwd: "/tmp/brand-new", label: "brand-new" } });
+      expect(ui.getState().selectedWorkspace.h).toBe("w-new");
+      t.renderer.destroy();
+    } finally {
+      console.error = origError;
+    }
+  });
+
+  test("the new-agent dialog starts the agent in that folder, even though nothing is selected", async () => {
+    const origError = console.error;
+    console.error = () => {};
+    try {
+      const store = createSessionStore();
+      store.actions.addHost({ id: "h", label: "h", url: "ws://x/ws" });
+      store.actions.setActiveHost("h");
+      const ui = createUiStore(); // no workspace selected at all
+      ui.actions.openModal({ kind: "newAgent", target: { hostId: "h", workspaceId: "w-new", cwd: "/tmp/brand-new", label: "brand-new" } });
+      const created: unknown[] = [];
+      const runtimes = {
+        get: () => ({
+          providers: async () => ({ entries: [{ provider: "claude", label: "Claude", enabled: true, status: "ready", modes: [{ id: "auto", label: "Auto" }] }] }),
+          listModels: async () => ({ models: [{ id: "haiku", label: "Haiku" }] }),
+          createAgent: async (opts: unknown) => { created.push(opts); return { id: "a-new" }; },
+        }),
+      } as never;
+      const settings = createSettingsStore(DEFAULT_SETTINGS, [], { persist: false });
+      const t = await testRender(
+        <AppContext.Provider value={{ store, ui, runtimes, settings }}>
+          <box width={90} height={24}><NewAgentModal target={{ hostId: "h", workspaceId: "w-new", cwd: "/tmp/brand-new", label: "brand-new" }} /></box>
+        </AppContext.Provider>,
+        { width: 90, height: 24 },
+      );
+      for (let i = 0; i < 4; i++) { await Bun.sleep(25); await t.renderOnce(); }
+      expect(t.captureCharFrame()).toContain("brand-new");
+      t.mockInput.pressTab(); // off the prompt field, onto the pickers
+      await Bun.sleep(20);
+      await t.renderOnce();
+      t.mockInput.pressEnter();
+      await Bun.sleep(40);
+      await t.renderOnce();
+      expect(created).toEqual([{ workspaceId: "w-new", cwd: "/tmp/brand-new", config: { provider: "claude/haiku", modeId: "auto" } }]);
+      expect(ui.getState().tabs["h:w-new"]?.tabs).toEqual(["a-new"]);
+      expect(ui.getState().modal).toBeNull();
+      t.renderer.destroy();
+    } finally {
+      console.error = origError;
+    }
+  });
+});
+
+describe("new agent without a workspace", () => {
+  test("n with nothing selected asks for a folder, then goes straight to the agent", async () => {
+    const store = createSessionStore();
+    store.actions.addHost({ id: "h", label: "h", url: "ws://x/ws" });
+    store.actions.setActiveHost("h");
+    const ui = createUiStore();
+    ui.actions.setFocus("sidebar");
+    const opened: { path: string; create: boolean }[] = [];
+    const runtimes = { get: () => ({ openFolder: async (path: string, create: boolean) => { opened.push({ path, create }); return { id: "w-fresh" }; } }) } as never;
+    const settings = createSettingsStore(DEFAULT_SETTINGS, [], { persist: false });
+    installDispatcher({ ui, store, runtimes, settings, quit: () => {} });
+
+    expect(dispatchGlobal(key("n"))).toBe(true);
+    expect(ui.getState().modal).toEqual({ kind: "addFolder", thenAgent: true });
+
+    const origError = console.error;
+    console.error = () => {};
+    const t = await testRender(
+      <AppContext.Provider value={{ store, ui, runtimes, settings }}>
+        <box width={90} height={20}><AddFolderModal thenAgent /></box>
+      </AppContext.Provider>,
+      { width: 90, height: 20 },
+    );
+    try {
+      await t.renderOnce();
+      for (const ch of "/tmp/fresh") t.mockInput.pressKey(ch);
+      await Bun.sleep(20);
+      await t.renderOnce();
+      t.mockInput.pressEnter(); // plain Enter: open it *and* continue to the agent dialog
+      await Bun.sleep(30);
+      await t.renderOnce();
+      expect(opened).toEqual([{ path: "/tmp/fresh", create: false }]);
+      expect(ui.getState().modal).toEqual({ kind: "newAgent", target: { hostId: "h", workspaceId: "w-fresh", cwd: "/tmp/fresh", label: "fresh" } });
+    } finally {
+      t.renderer.destroy();
+      console.error = origError;
     }
   });
 });
