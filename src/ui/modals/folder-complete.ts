@@ -1,3 +1,5 @@
+import { longestCommonPrefix } from "../../util/text";
+
 /**
  * Shell-style Tab completion for the Add-folder path. Pure: callers supply the
  * directory entries, so the rules are testable without a filesystem or a daemon.
@@ -11,17 +13,7 @@ export function splitFolderInput(input: string): { dir: string; prefix: string }
   return { dir: input.slice(0, cut + 1), prefix: input.slice(cut + 1) };
 }
 
-export function longestCommonPrefix(values: string[]): string {
-  if (values.length === 0) return "";
-  let prefix = values[0]!;
-  for (const v of values.slice(1)) {
-    let i = 0;
-    while (i < prefix.length && i < v.length && prefix[i] === v[i]) i++;
-    prefix = prefix.slice(0, i);
-    if (!prefix) break;
-  }
-  return prefix;
-}
+
 
 export interface Completion {
   /** The input after completing as far as the matches allow. */

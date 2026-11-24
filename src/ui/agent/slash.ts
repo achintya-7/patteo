@@ -7,6 +7,7 @@ import { tabsKey, type UiStore } from "../../stores/ui";
 import type { SessionStore } from "../../stores/session";
 import { selection } from "../../keyboard/commands";
 import * as T from "../workspace/tabs-model";
+import { longestCommonPrefix } from "../../util/text";
 
 export interface SlashCtx {
   ui: UiStore;
@@ -92,4 +93,22 @@ export function resolveSlash(text: string, list: SlashCommand[]): SlashCommand |
   if (exact) return exact;
   const prefixed = list.filter((c) => c.name.startsWith(name));
   return prefixed.length === 1 ? prefixed[0]! : null;
+}
+
+/**
+ * Tab in the composer: fills the command the draft is heading for.
+ *
+ * A unique match is filled (`/fo` → `/fork`); several matches extend to what they share
+ * (`/m` → `/mode`), and a name that is already complete stays as it is. Null means "not a
+ * command line" (so Tab can indent instead).
+ */
+export function slashCompletion(text: string, list: SlashCommand[]): { value: string; candidates: SlashCommand[] } | null {
+  const q = slashQuery(text);
+  if (q === null || q === "") return null;
+  const candidates = list.filter((c) => c.name.startsWith(q.toLowerCase()));
+  if (candidates.length === 0) return null;
+  if (candidates.some((c) => c.name === q)) return { value: `/${q}`, candidates }; // already complete
+  const shared = longestCommonPrefix(candidates.map((c) => c.name));
+  if (shared.length > q.length) return { value: `/${shared}`, candidates };
+  return { value: `/${candidates[0]!.name}`, candidates };
 }

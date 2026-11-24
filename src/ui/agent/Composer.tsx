@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useApp, useSession, useUi } from "../../stores/context";
 import { useTheme } from "../../theme/theme";
 import { truncate } from "../text";
-import { resolveSlash, slashMatches, visibleSlash, type SlashCommand } from "./slash";
+import { resolveSlash, slashCompletion, slashMatches, slashQuery, visibleSlash, type SlashCommand } from "./slash";
 import { composerHeight, composerLineCount } from "./composer-size";
 
 /** Lets the global Ctrl+C know whether to clear the composer instead of quitting. */
@@ -96,13 +96,33 @@ export function Composer({ hostId, agentId, width, maxLines = COMPOSER_MAX_LINES
   useKeyboard((k) => {
     if (!focused) return;
     if (k.name === "escape") return ui.actions.setFocus("main");
+    if (k.name !== "tab") return;
+    // Tab belongs to the text you are writing: it completes a / command, or indents.
+    k.preventDefault();
+    const text = ref.current?.plainText ?? "";
+    const completion = slashCompletion(text, slashList);
+    if (completion) {
+      const field = ref.current;
+      if (!field) return;
+      if (completion.value.startsWith(text) && field.cursorOffset === text.length) {
+        field.insertText(completion.value.slice(text.length)); // keeps the cursor at the end
+      } else {
+        field.setText(completion.value);
+        field.cursorOffset = completion.value.length;
+      }
+      sync();
+      return;
+    }
+    if (slashQuery(text) !== null) return; // a command with no match: leave the line alone
+    ref.current?.insertText("  ");
+    sync();
   });
 
   const running = agent?.status === "running";
   const mode = agent?.availableModes?.find((m) => m.id === agent.currentModeId)?.label ?? agent?.currentModeId ?? "";
   const model = agent?.model ?? agent?.provider ?? "";
   const hints = focused
-    ? `⏎ send · ⌥⏎ newline · ${running ? "^X stop · " : ""}esc`
+    ? `⏎ send · ⌥⏎ newline · tab indent · ${running ? "^X stop · " : ""}esc`
     : running
       ? "i write · ^X stop"
       : "i to write";

@@ -170,7 +170,7 @@ test("permissions dialog shows the request and its actions", async () => {
   }
 });
 
-import { SLASH_COMMANDS, resolveSlash, slashMatches, slashQuery } from "../src/ui/agent/slash";
+import { SLASH_COMMANDS, resolveSlash, slashCompletion, slashMatches, slashQuery } from "../src/ui/agent/slash";
 
 describe("slash commands", () => {
   test("only a leading / without arguments is a query", () => {
@@ -478,7 +478,8 @@ describe("add folder", () => {
   });
 });
 
-import { completeFolder, longestCommonPrefix, splitFolderInput } from "../src/ui/modals/folder-complete";
+import { completeFolder, splitFolderInput } from "../src/ui/modals/folder-complete";
+import { longestCommonPrefix } from "../src/util/text";
 import { homedir } from "node:os";
 
 describe("folder completion", () => {
@@ -757,6 +758,87 @@ describe("composer newlines", () => {
       t.renderer.destroy();
     } finally {
       console.error = origError;
+    }
+  });
+});
+
+describe("Tab in the composer", () => {
+  test("fills the command the draft is heading for", () => {
+    expect(slashCompletion("/fo", SLASH_COMMANDS)?.value).toBe("/fork");
+    expect(slashCompletion("/m", SLASH_COMMANDS)?.value).toBe("/mode"); // model and mode share "mode"
+    expect(slashCompletion("/mod", SLASH_COMMANDS)?.value).toBe("/mode");
+    expect(slashCompletion("/model", SLASH_COMMANDS)?.value).toBe("/model"); // already complete: unchanged
+    expect(slashCompletion("/mode", SLASH_COMMANDS)?.value).toBe("/mode");
+    expect(slashCompletion("/sto", SLASH_COMMANDS)?.value).toBe("/stop");
+    expect(slashCompletion("/", SLASH_COMMANDS)).toBeNull(); // nothing typed yet
+    expect(slashCompletion("/nope", SLASH_COMMANDS)).toBeNull();
+    expect(slashCompletion("git push", SLASH_COMMANDS)).toBeNull();
+    expect(slashCompletion("/fork now", SLASH_COMMANDS)).toBeNull(); // arguments: not a completion
+  });
+
+  function harness() {
+    const store = createSessionStore();
+    store.actions.addHost({ id: "h", label: "h", url: "ws://x/ws" });
+    store.actions.setActiveHost("h");
+    store.actions.setWorkspaces("h", [{ id: "w", projectId: "p", title: "W", status: "idle" } as never]);
+    store.actions.setAgents("h", [{ id: "a", status: "idle", cwd: "/r", workspaceId: "w", updatedAt: new Date().toISOString(), provider: "claude", model: "m", title: "A" } as never]);
+    const ui = createUiStore();
+    ui.actions.selectWorkspace("h", "w");
+    ui.actions.updateTabs("h:w", (s) => ({ ...s, tabs: ["a"], active: "a" }));
+    ui.actions.setFocus("composer");
+    const settings = createSettingsStore(DEFAULT_SETTINGS, [], { persist: false });
+    const runtimes = { get: () => ({ send: async () => {} }) } as never;
+    installDispatcher({ ui, store, runtimes, settings, quit: () => {} });
+    return { store, ui, runtimes, settings };
+  }
+
+  async function mount(h: ReturnType<typeof harness>) {
+    const origError = console.error;
+    console.error = () => {};
+    const t = await testRender(
+      <AppContext.Provider value={{ store: h.store, ui: h.ui, runtimes: h.runtimes, settings: h.settings }}>
+        <box width={70} height={12}><Composer hostId="h" agentId="a" width={70} maxLines={6} /></box>
+      </AppContext.Provider>,
+      { width: 70, height: 12 },
+    );
+    await t.renderOnce();
+    return { t, settle: async () => { await Bun.sleep(25); await t.renderOnce(); }, done: () => { t.renderer.destroy(); console.error = origError; } };
+  }
+
+  test("Tab completes a / command and leaves the pane alone", async () => {
+    const h = harness();
+    const { t, settle, done } = await mount(h);
+    try {
+      for (const ch of "/fo") t.mockInput.pressKey(ch);
+      await settle();
+      t.mockInput.pressTab();
+      await settle();
+      expect(h.ui.getState().drafts["h:a"]).toBe("/fork");
+      expect(h.ui.getState().focus).toBe("composer");
+      // The cursor stays at the end: typing after a completion appends.
+      t.mockInput.pressKey("x");
+      await settle();
+      expect(h.ui.getState().drafts["h:a"]).toBe("/forkx");
+      expect(h.ui.getState().focus).toBe("composer");
+    } finally {
+      done();
+    }
+  });
+
+  test("Tab indents ordinary text instead of switching panes", async () => {
+    const h = harness();
+    const { t, settle, done } = await mount(h);
+    try {
+      for (const ch of "if (x) {") t.mockInput.pressKey(ch);
+      await settle();
+      t.mockInput.pressTab();
+      await settle();
+      expect(h.ui.getState().drafts["h:a"]).toBe("if (x) {  ");
+      expect(h.ui.getState().focus).toBe("composer");
+      // And the global binding no longer claims Tab while composing.
+      expect(dispatchGlobal(key("tab"))).toBe(false);
+    } finally {
+      done();
     }
   });
 });

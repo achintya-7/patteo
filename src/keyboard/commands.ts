@@ -73,9 +73,8 @@ export const COMMANDS: Command[] = [
   { id: "settings.open", title: "Settings", group: "General", keys: [",", "ctrl+,"], run: (c) => c.ui.actions.openModal({ kind: "settings" }) },
   { id: "app.quit", title: "Quit", group: "General", keys: ["q"], run: (c) => c.quit() },
 
-  { id: "focus.cycle", title: "Switch pane", group: "Navigation", keys: ["tab"], inComposer: true, hidden: true, run: (c) => {
-    const u = c.ui.getState();
-    if (u.focus === "composer") return c.ui.actions.setFocus(u.sidebarVisible ? "sidebar" : "main");
+  // Not while composing: there Tab completes a / command or indents (see Composer).
+  { id: "focus.cycle", title: "Switch pane", group: "Navigation", keys: ["tab"], inComposer: false, hidden: true, run: (c) => {
     c.ui.actions.cycleFocus(c.settings.getState().settings.panelSide);
   } },
   { id: "sidebar.toggle", title: "Toggle sidebar", group: "Navigation", keys: ["ctrl+b"], inComposer: true, run: (c) => c.ui.actions.toggleSidebar() },
