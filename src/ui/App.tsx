@@ -35,15 +35,20 @@ export function App() {
   usePermissionToasts();
 
   const bodyHeight = Math.max(3, height - 1);
-  const terminalCols = terminalOpen ? Math.floor(width / 2) : 0;
+  const chatLayout = (available: number) => {
+    const sbWidth = Math.min(SIDEBAR_SIZES[size], sidebarWidth(available) + (SIDEBAR_SIZES[size] - 38));
+    const sidebarCols = sidebarVisible && available >= 42 ? Math.max(22, sbWidth) : 0;
+    const panelCols = panelOpen && hostId && workspaceId && available >= PANEL_MIN_TERM_WIDTH ? panelWidth(available) : 0;
+    return { sidebarCols, panelCols, chatCols: available - sidebarCols - panelCols };
+  };
+  const terminalCols = terminalOpen
+    ? Math.min(Math.max(20, Math.floor(chatLayout(width).chatCols / 2)), Math.max(0, width - 20))
+    : 0;
   const leftWidth = width - terminalCols;
-  const sbWidth = Math.min(SIDEBAR_SIZES[size], sidebarWidth(leftWidth) + (SIDEBAR_SIZES[size] - 38));
-  const sidebarCols = sidebarVisible && (!terminalOpen || leftWidth >= 42) ? Math.max(22, sbWidth) : 0;
-  const showPanel = panelOpen && !!hostId && !!workspaceId && leftWidth >= PANEL_MIN_TERM_WIDTH;
-  const panelCols = showPanel ? panelWidth(leftWidth) : 0;
-  const panel = showPanel ? (
+  const { sidebarCols, panelCols, chatCols } = chatLayout(leftWidth);
+  const panel = panelCols > 0 && hostId && workspaceId ? (
     <ErrorBoundary label="Panel">
-      <ExplorerPanel hostId={hostId} workspaceId={workspaceId!} width={panelCols} height={bodyHeight} />
+      <ExplorerPanel hostId={hostId} workspaceId={workspaceId} width={panelCols} height={bodyHeight} />
     </ErrorBoundary>
   ) : null;
   return (
@@ -55,7 +60,7 @@ export function App() {
           {sidebarCols ? <Sidebar height={bodyHeight} width={sidebarCols} /> : null}
           {panelSide === "left" ? panel : null}
           <ErrorBoundary label="Main pane">
-            <WorkspacePane width={Math.max(20, leftWidth - sidebarCols - panelCols)} height={bodyHeight} />
+            <WorkspacePane width={Math.max(20, chatCols)} height={bodyHeight} />
           </ErrorBoundary>
           {panelSide === "right" ? panel : null}
         </box>

@@ -4,7 +4,7 @@ import { createAppState, AppRoot } from "../src/app-root";
 import { sanitizeSettings } from "../src/config/settings";
 import type { HostRuntime } from "../src/paseo/host-runtime";
 
-test("the terminal opens on the right half, receives input, and detaches when hidden", async () => {
+test("the terminal opens at half the previous chat width, receives input, and detaches when hidden", async () => {
   const state = createAppState({ settings: sanitizeSettings({ terminalShell: " bash " }) });
   state.store.actions.addHost({ id: "h", label: "Host", url: "ws://localhost/ws" });
   state.store.actions.setWorkspaces("h", [{ id: "w", title: "Workspace" }] as never);
@@ -28,9 +28,9 @@ test("the terminal opens on the right half, receives input, and detaches when hi
     await settle();
     t.mockInput.pressKey("F2");
     await settle();
-    expect(t.captureCharFrame().split("\n")[0]!.indexOf("Terminal")).toBeGreaterThan(49);
+    expect(t.captureCharFrame().split("\n")[0]!.indexOf("Terminal")).toBeGreaterThan(69);
     expect(t.captureCharFrame()).toContain("shell ready");
-    expect(attachments[0]).toMatchObject({ workspace: "w", command: "bash", cols: 48 });
+    expect(attachments[0]).toMatchObject({ workspace: "w", command: "bash", cols: 29 });
     t.mockInput.pressKey("q");
     t.mockInput.pressCtrlC();
     expect(input.join("")).toBe("q\x03");
