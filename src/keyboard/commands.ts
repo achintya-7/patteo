@@ -7,6 +7,7 @@ import type { RuntimeManager } from "../paseo/runtime-manager";
 import type { SessionStore } from "../stores/session";
 import type { SettingsStore } from "../stores/settings";
 import { tabsKey, type UiStore } from "../stores/ui";
+import { workspaceLabel } from "../ui/sidebar/model";
 
 export interface CommandCtx {
   ui: UiStore;
@@ -46,6 +47,22 @@ export function selection(ctx: Pick<CommandCtx, "ui" | "store">) {
 }
 
 const hasAgent = (c: CommandCtx) => !!selection(c).agent;
+
+export function confirmArchiveWorkspace(c: Pick<CommandCtx, "ui" | "store">, hostId: string, workspaceId: string) {
+  const workspace = c.store.getState().hosts[hostId]?.workspaces[workspaceId];
+  if (!workspace || workspace.archivingAt) return;
+  c.ui.actions.openModal({
+    kind: "confirm",
+    title: "Archive workspace?",
+    body: `Archive “${workspaceLabel(workspace)}” and its agents and terminals? ${
+      workspace.workspaceKind === "worktree" ? "Paseo may remove its managed worktree." : "Its folder stays on disk."
+    }`,
+    confirmLabel: "Archive",
+    action: "workspace.archive",
+    payload: { hostId, workspaceId },
+  });
+}
+
 /**
  * Focuses the composer on the next tick: the key that triggered the focus (`i`, Enter)
  * is still being dispatched to the text field, which would insert it as text.
@@ -84,6 +101,9 @@ export const COMMANDS: Command[] = [
   { id: "composer.focusEnter", title: "Write a message", group: "Agent", keys: ["return"], hidden: true, when: (c) => hasAgent(c) && c.ui.getState().focus === "main", run: focusComposer },
 
   { id: "workspace.open", title: "Add folder…", group: "Workspace", keys: ["A"], run: (c) => c.ui.actions.openModal({ kind: "addFolder" }) },
+  { id: "workspace.archive", title: "Archive a workspace…", group: "Workspace", keys: [],
+    when: (c) => Object.values(selection(c).host?.workspaces ?? {}).some((w) => !w.archivingAt),
+    run: (c) => c.ui.actions.openModal({ kind: "archiveWorkspace" }) },
   { id: "panel.toggle", title: "Toggle files & changes panel", group: "Workspace", keys: ["C"], when: (c) => !!selection(c).workspace,
     run: (c) => c.ui.actions.togglePanel() },
   { id: "panel.files", title: "Show files", group: "Workspace", keys: [], when: (c) => !!selection(c).workspace, run: (c) => c.ui.actions.openPanel("files") },
@@ -155,6 +175,7 @@ export const COMMANDS: Command[] = [
 export const LOCAL_KEYS: { group: string; keys: string; title: string }[] = [
   { group: "Sidebar", keys: "↑↓ j k", title: "Move" },
   { group: "Sidebar", keys: "⏎ / Space", title: "Open workspace · fold project" },
+  { group: "Sidebar", keys: "a", title: "Archive highlighted workspace…" },
   { group: "Sidebar", keys: "h l", title: "Fold / unfold" },
   { group: "Tabs", keys: "1–9  [ ]", title: "Go to tab · previous / next" },
   { group: "Tabs", keys: "`", title: "Last used tab" },

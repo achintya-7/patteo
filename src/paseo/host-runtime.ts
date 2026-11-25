@@ -285,6 +285,12 @@ export class HostRuntime {
     return this.api.agents.ref(agentId).archive();
   }
 
+  async archiveWorkspace(workspaceId: string) {
+    const result = await this.api.workspaces.ref(workspaceId).archive();
+    if (result.error) throw new Error(result.error);
+    this.store.actions.removeWorkspace(this.id, workspaceId);
+  }
+
   respondToPermission(agentId: string, requestId: string, response: AgentPermissionResponse) {
     return this.api.agents.ref(agentId).respondToPermission({ requestId, response });
   }
