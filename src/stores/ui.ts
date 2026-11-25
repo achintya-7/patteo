@@ -29,6 +29,8 @@ export type Modal =
   | { kind: "settings"; section?: string }
   | { kind: "model" }
   | { kind: "mode" }
+  | { kind: "agents" }
+  | { kind: "subagents" }
   | { kind: "confirm"; title: string; body: string; confirmLabel: string; action: string; payload?: unknown };
 
 export interface Toast {

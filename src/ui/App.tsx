@@ -10,7 +10,7 @@ import { AddHostModal, EditHostModal, HostsModal } from "./modals/HostsModals";
 import { NewAgentModal } from "./modals/NewAgentModal";
 import { PermissionsModal } from "./modals/PermissionsModal";
 import { SettingsModal } from "./modals/SettingsModal";
-import { ConfirmModal, HelpModal, ModeModal, ModelModal, PaletteModal } from "./modals/simple";
+import { ConfirmModal, HelpModal, ModeModal, ModelModal, PaletteModal, AgentsModal } from "./modals/simple";
 import { Sidebar, sidebarWidth } from "./sidebar/Sidebar";
 import { StatusBar } from "./StatusBar";
 import { Toaster } from "./Toaster";
@@ -87,6 +87,10 @@ function ModalLayer() {
       return <ModeModal />;
     case "model":
       return <ModelModal />;
+    case "agents":
+      return <AgentsModal />;
+    case "subagents":
+      return <AgentsModal subagents />;
     case "confirm":
       return <ConfirmModal title={modal.title} body={modal.body} confirmLabel={modal.confirmLabel} onConfirm={() => confirm(modal)} />;
   }

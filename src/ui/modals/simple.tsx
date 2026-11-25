@@ -1,4 +1,5 @@
 import { TextAttributes } from "@opentui/core";
+import { PARENT_AGENT_ID_LABEL, PARENT_SERVER_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useState } from "react";
 import { activeCommands, commandContext, runCommand } from "../../keyboard/dispatch";
@@ -7,7 +8,11 @@ import { keyLabel } from "../../keyboard/keys";
 import { useApp } from "../../stores/context";
 import { useTheme } from "../../theme/theme";
 import { Skeleton } from "../motion/Motion";
+import { agentStatusGlyph } from "../status";
 import { padEnd } from "../text";
+import { relativeTime } from "../time";
+import { openTab } from "../workspace/tabs-model";
+import { useSelectedWorkspace } from "../workspace/use-workspace";
 import { Overlay, overlayInner } from "./Overlay";
 import { SelectList, type ListItem } from "./SelectList";
 
@@ -186,6 +191,63 @@ export function ModelModal() {
               ui.actions.toast(`Model: ${it.label}`, "success");
             } catch (err) {
               ui.actions.toast(String(err instanceof Error ? err.message : err), "error");
+            }
+          }}
+        />
+      )}
+    </Overlay>
+  );
+}
+
+/** The workspace's agents, newest first (the main-pane picker's list, filterable). */
+export function AgentsModal({ subagents = false }: { subagents?: boolean }) {
+  const { ui } = useApp();
+  const t = useTheme();
+  const { width, height } = useTerminalDimensions();
+  const { host, workspace, workspaceId, key, tabs, agents } = useSelectedWorkspace();
+  const parent = tabs.active ? host?.agents[tabs.active] : undefined;
+  const listed = subagents ? agents.filter((a) =>
+    parent && a.id !== parent.id && a.labels?.[PARENT_AGENT_ID_LABEL] === parent.id &&
+    (!host?.serverId || a.labels[PARENT_SERVER_ID_LABEL] === host.serverId),
+  ) : agents;
+  const items: ListItem[] = listed.map((a) => {
+    const waiting = !!a.pendingPermissions?.length;
+    const status = waiting ? "waiting for input" : a.status;
+    return {
+      id: a.id,
+      label: a.title || "Untitled agent",
+      detail: [a.model ?? a.provider, relativeTime(a.updatedAt)].filter(Boolean).join(" · "),
+      hint: subagents ? status : a.id === tabs.active ? "current" : "",
+      marker: agentStatusGlyph(a.status, waiting || !!a.requiresAttention, t),
+    };
+  });
+  useKeyboard((k) => {
+    if (!items.length && k.name === "escape") ui.actions.closeModal();
+  });
+  const picker = subagents ? "Subagents" : "Agents";
+  const label = subagents ? parent?.title : workspace?.title ?? workspaceId;
+  const modalHeight = Math.min(20, height - 2, 6 + items.length * 2);
+  return (
+    <Overlay title={label ? `${picker} · ${label}` : picker} width={64} height={modalHeight} footer={items.length ? "⏎ open as a tab · esc close" : "esc close"}>
+      {items.length === 0 ? (
+        <text fg={t.subtle} wrapMode="word">{subagents ? "No subagents for this agent in this workspace." : "No agents in this workspace yet. Press n to start one."}</text>
+      ) : (
+        <SelectList
+          items={items}
+          initialId={tabs.active ?? undefined}
+          width={overlayInner(64, width)}
+          height={Math.min(modalHeight - 2, items.length * 2 + 2)}
+          placeholder={subagents ? "Search subagents" : "Search agents"}
+          onCancel={() => ui.actions.closeModal()}
+          onSelect={(it) => {
+            ui.actions.closeModal();
+            if (!key) return;
+            ui.actions.updateTabs(key, (s) => openTab(s, it.id, { after: "active" }));
+            ui.actions.setPickerOpen(false);
+            if (subagents) {
+              ui.actions.setDiffPath(null);
+              ui.actions.setFilePath(null);
+              ui.actions.setFocus("main");
             }
           }}
         />
