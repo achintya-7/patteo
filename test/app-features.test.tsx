@@ -842,6 +842,26 @@ describe("Tab in the composer", () => {
       done();
     }
   });
+
+  test("the status line shows explicit and default thinking levels", async () => {
+    const h = harness();
+    const update = (thinkingOptionId?: string, effectiveThinkingOptionId?: string, model = "haiku") =>
+      h.store.actions.setAgents("h", [{ id: "a", status: "idle", cwd: "/r", workspaceId: "w", updatedAt: new Date().toISOString(), provider: "claude", model, thinkingOptionId, effectiveThinkingOptionId, title: "A" } as never]);
+    update("high");
+    const { t, settle, done } = await mount(h);
+    try {
+      await settle();
+      expect(t.captureCharFrame()).toContain("model haiku  ·  thinking high");
+      update("default", "low", "a-very-long-provider-name/a-very-long-model-name");
+      await settle();
+      expect(t.captureCharFrame()).toContain("thinking low (default)");
+      update();
+      await settle();
+      expect(t.captureCharFrame()).toContain("model haiku  ·  thinking default");
+    } finally {
+      done();
+    }
+  });
 });
 
 describe("a new agent in a folder that isn't in the sidebar", () => {
