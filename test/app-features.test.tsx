@@ -793,14 +793,14 @@ describe("Tab in the composer", () => {
     return { store, ui, runtimes, settings };
   }
 
-  async function mount(h: ReturnType<typeof harness>) {
+  async function mount(h: ReturnType<typeof harness>, width = 70) {
     const origError = console.error;
     console.error = () => {};
     const t = await testRender(
       <AppContext.Provider value={{ store: h.store, ui: h.ui, runtimes: h.runtimes, settings: h.settings }}>
-        <box width={70} height={12}><Composer hostId="h" agentId="a" width={70} maxLines={6} /></box>
+        <box width={width} height={12}><Composer hostId="h" agentId="a" width={width} maxLines={6} /></box>
       </AppContext.Provider>,
-      { width: 70, height: 12 },
+      { width, height: 12 },
     );
     await t.renderOnce();
     return { t, settle: async () => { await Bun.sleep(25); await t.renderOnce(); }, done: () => { t.renderer.destroy(); console.error = origError; } };
@@ -838,6 +838,45 @@ describe("Tab in the composer", () => {
       expect(h.ui.getState().focus).toBe("composer");
       // And the global binding no longer claims Tab while composing.
       expect(dispatchGlobal(key("tab"))).toBe(false);
+    } finally {
+      done();
+    }
+  });
+
+  test("the status line shows explicit and default thinking levels", async () => {
+    const h = harness();
+    const update = (thinkingOptionId?: string, effectiveThinkingOptionId?: string, model = "haiku") =>
+      h.store.actions.setAgents("h", [{ id: "a", status: "idle", cwd: "/r", workspaceId: "w", updatedAt: new Date().toISOString(), provider: "claude", model, thinkingOptionId, effectiveThinkingOptionId, title: "A" } as never]);
+    update("high");
+    const { t, settle, done } = await mount(h);
+    try {
+      await settle();
+      expect(t.captureCharFrame()).toContain("model haiku  ·  thinking high");
+      update("default", "low", "a-very-long-provider-name/a-very-long-model-name");
+      await settle();
+      expect(t.captureCharFrame()).toContain("thinking low (default)");
+      update();
+      await settle();
+      expect(t.captureCharFrame()).toContain("model haiku  ·  thinking default");
+    } finally {
+      done();
+    }
+  });
+
+  test.each([70, 52])("the status line uses reported context usage at width %i", async (width) => {
+    const h = harness();
+    const update = (lastUsage: { contextWindowUsedTokens?: number; contextWindowMaxTokens?: number; inputTokens?: number }) =>
+      h.store.actions.setAgents("h", [{ id: "a", status: "idle", provider: "opencode", model: "test", lastUsage } as never]);
+    update({ contextWindowUsedTokens: 42_000, contextWindowMaxTokens: 200_000 });
+    const { t, settle, done } = await mount(h, width);
+    try {
+      expect(t.captureCharFrame()).toContain(width === 70 ? "42K / 200K tokens (21%)" : "42K tokens");
+      update({ contextWindowUsedTokens: 0 });
+      await settle();
+      expect(t.captureCharFrame()).toContain("0 tokens");
+      update({ inputTokens: 500 });
+      await settle();
+      expect(t.captureCharFrame()).not.toContain("tokens");
     } finally {
       done();
     }

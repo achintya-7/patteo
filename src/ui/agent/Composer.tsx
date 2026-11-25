@@ -7,6 +7,8 @@ import { truncate } from "../text";
 import { resolveSlash, slashCompletion, slashMatches, slashQuery, visibleSlash, type SlashCommand } from "./slash";
 import { composerHeight, composerLineCount } from "./composer-size";
 
+const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact" });
+
 /** Lets the global Ctrl+C know whether to clear the composer instead of quitting. */
 /** What the app (and the global key handler) can ask the open composer to do. */
 export const composerHandle = {
@@ -121,16 +123,34 @@ export function Composer({ hostId, agentId, width, maxLines = COMPOSER_MAX_LINES
   const running = agent?.status === "running";
   const mode = agent?.availableModes?.find((m) => m.id === agent.currentModeId)?.label ?? agent?.currentModeId ?? "";
   const model = agent?.model ?? agent?.provider ?? "";
+  const requestedThinking = agent?.thinkingOptionId;
+  const effectiveThinking = agent?.effectiveThinkingOptionId;
+  const thinking = requestedThinking && requestedThinking !== "default"
+    ? requestedThinking
+    : effectiveThinking && effectiveThinking !== "default" ? `${effectiveThinking} (default)` : "default";
   const hints = focused
     ? `⏎ send · ⌥⏎ newline · tab indent · ${running ? "^X stop · " : ""}esc`
     : running
       ? "i write · ^X stop"
       : "i to write";
   const shown = Math.max(1, Math.min(maxLines, lines));
-  // The left label and the right hints share one row; clip the label to its half.
+  const modelStatus = [mode, model && `model ${model}`].filter(Boolean).join("  ·  ");
+  const used = agent?.lastUsage?.contextWindowUsedTokens;
+  const limit = agent?.lastUsage?.contextWindowMaxTokens;
+  const tokenCount = used == null ? "" : `${compactTokens.format(used)} tokens`;
+  const context = used != null && limit != null && limit > 0
+    ? `${compactTokens.format(used)} / ${compactTokens.format(limit)} tokens (${Math.round(used / limit * 100)}%)`
+    : tokenCount;
+  const thinkingStatus = agent ? `thinking ${thinking}` : "";
+  const statusTail = (usage: string) => [thinkingStatus, usage, sending ? "sending…" : ""].filter(Boolean).map((part) => `  ·  ${part}`).join("");
+  const modelMin = Math.min(modelStatus.length, 16);
+  const tail = [context, tokenCount].map(statusTail).find((part) => part.length <= width - 4 - modelMin) ?? statusTail("");
+  const right = truncate(hints, width - 4 - tail.length - modelMin);
+  const leftWidth = Math.max(0, width - right.length - 4);
+  // Clip long model names before they can push thinking and usage off the row.
   const left = truncate(
-    [mode, model ? `model ${model}` : "", sending ? "sending…" : ""].filter(Boolean).join("  ·  "),
-    Math.max(8, width - hints.length - 4),
+    `${truncate(modelStatus, Math.max(1, leftWidth - tail.length))}${tail}`,
+    leftWidth,
   );
 
   return (
@@ -172,7 +192,7 @@ export function Composer({ hostId, agentId, width, maxLines = COMPOSER_MAX_LINES
       <SlashHints text={draftText} list={slashList} width={width} />
       <box height={1} flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
         <text fg={t.accent} attributes={TextAttributes.BOLD} wrapMode="none">{left}</text>
-        <text fg={t.subtle} wrapMode="none">{hints}</text>
+        <text fg={t.subtle} wrapMode="none">{right}</text>
       </box>
     </box>
   );
