@@ -1,5 +1,5 @@
 import { useTerminalDimensions } from "@opentui/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp, useSession, useSettings, useUi } from "../stores/context";
 import { tabsKey, type Modal } from "../stores/ui";
 import { useTheme } from "../theme/theme";
@@ -20,6 +20,37 @@ import { WorkspacePane } from "./workspace/WorkspacePane";
 import { TerminalPane } from "./workspace/TerminalPane";
 
 const SIDEBAR_SIZES = { narrow: 28, normal: 38, wide: 48 } as const;
+const MAIN_MIN = 20;
+const TERMINAL_MIN = 20;
+const clampWidth = (width: number, min: number, max: number) => Math.min(Math.max(width, min), max);
+
+function Divider({ name, width, min, max, grow, onResize }: {
+  name: string; width: number; min: number; max: number; grow: 1 | -1; onResize: (width: number) => void;
+}) {
+  const t = useTheme();
+  const { ui } = useApp();
+  const start = useRef<{ x: number; width: number; min: number; max: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const finish = () => {
+    start.current = null;
+    setDragging(false);
+  };
+  return <box id={`resize-${name}`} width={1} height="100%" flexShrink={0}
+    backgroundColor={dragging ? t.accent : t.border}
+    onMouseDown={(event) => {
+      if (event.button !== 0 || ui.getState().modal) return;
+      event.stopPropagation();
+      start.current = { x: event.x, width, min, max };
+    }}
+    onMouseDrag={(event) => {
+      const drag = start.current;
+      if (!drag || ui.getState().modal) return;
+      setDragging(true);
+      onResize(clampWidth(drag.width + grow * (event.x - drag.x), drag.min, drag.max));
+    }}
+    onMouseUp={finish}
+    onMouseDragEnd={finish} />;
+}
 
 export function App() {
   const { ui } = useApp();
@@ -31,22 +62,35 @@ export function App() {
   const size = useSettings((s) => s.settings.sidebar);
   const panelSide = useSettings((s) => s.settings.panelSide);
   const { hostId, workspaceId } = useSelectedWorkspace();
+  const [sidebarWidthOverride, setSidebarWidth] = useState<number>();
+  const [explorerWidthOverride, setExplorerWidth] = useState<number>();
+  const [terminalWidthOverride, setTerminalWidth] = useState<number>();
 
   usePermissionToasts();
 
   const bodyHeight = Math.max(3, height - 1);
-  const chatLayout = (available: number) => {
+  const explorerMin = panelWidth(PANEL_MIN_TERM_WIDTH);
+  const layoutChat = (available: number) => {
     const sbWidth = Math.min(SIDEBAR_SIZES[size], sidebarWidth(available) + (SIDEBAR_SIZES[size] - 38));
-    const sidebarCols = sidebarVisible && available >= 42 ? Math.max(22, sbWidth) : 0;
-    const panelCols = panelOpen && hostId && workspaceId && available >= PANEL_MIN_TERM_WIDTH ? panelWidth(available) : 0;
-    return { sidebarCols, panelCols, chatCols: available - sidebarCols - panelCols };
+    const narrowSidebar = Math.max(22, sidebarWidth(available) + SIDEBAR_SIZES.narrow - SIDEBAR_SIZES.normal);
+    const showSidebar = sidebarVisible && available >= MAIN_MIN + narrowSidebar + 1;
+    const showPanel = panelOpen && !!hostId && !!workspaceId && available >= PANEL_MIN_TERM_WIDTH;
+    const leftBudget = available - MAIN_MIN - Number(showSidebar) - Number(showPanel);
+    const sidebarCols = showSidebar ? clampWidth(sidebarWidthOverride ?? sbWidth, narrowSidebar, leftBudget - (showPanel ? explorerMin : 0)) : 0;
+    const panelCols = showPanel ? clampWidth(explorerWidthOverride ?? panelWidth(available), explorerMin, leftBudget - sidebarCols) : 0;
+    const mainCols = available - sidebarCols - panelCols - Number(showSidebar) - Number(showPanel);
+    return { narrowSidebar, showSidebar, showPanel, leftBudget, sidebarCols, panelCols, mainCols };
   };
   const terminalCols = terminalOpen
-    ? Math.min(Math.max(20, Math.floor(chatLayout(width).chatCols / 2)), Math.max(0, width - 20))
+    ? clampWidth(terminalWidthOverride ?? Math.floor(layoutChat(width).mainCols / 2), TERMINAL_MIN, Math.max(0, width - MAIN_MIN - 1))
     : 0;
-  const leftWidth = width - terminalCols;
-  const { sidebarCols, panelCols, chatCols } = chatLayout(leftWidth);
-  const panel = panelCols > 0 && hostId && workspaceId ? (
+  const leftWidth = width - terminalCols - Number(terminalCols > 0);
+  const { narrowSidebar, showSidebar, showPanel, leftBudget, sidebarCols, panelCols, mainCols } = layoutChat(leftWidth);
+  const panelDivider = showPanel ? (
+    <Divider name="explorer" width={panelCols} min={explorerMin} max={leftBudget - sidebarCols}
+      grow={panelSide === "left" ? 1 : -1} onResize={setExplorerWidth} />
+  ) : null;
+  const panel = showPanel && hostId && workspaceId ? (
     <ErrorBoundary label="Panel">
       <ExplorerPanel hostId={hostId} workspaceId={workspaceId} width={panelCols} height={bodyHeight} />
     </ErrorBoundary>
@@ -58,16 +102,24 @@ export function App() {
           if (ui.getState().focus === "terminal") ui.actions.setFocus("main");
         }}>
           {sidebarCols ? <Sidebar height={bodyHeight} width={sidebarCols} /> : null}
+          {showSidebar ? <Divider name="sidebar" width={sidebarCols} min={narrowSidebar} max={leftBudget - panelCols} grow={1} onResize={setSidebarWidth} /> : null}
           {panelSide === "left" ? panel : null}
+          {panelSide === "left" ? panelDivider : null}
           <ErrorBoundary label="Main pane">
-            <WorkspacePane width={Math.max(20, chatCols)} height={bodyHeight} />
+            <WorkspacePane width={Math.max(1, mainCols)} height={bodyHeight} />
           </ErrorBoundary>
+          {panelSide === "right" ? panelDivider : null}
           {panelSide === "right" ? panel : null}
         </box>
         {terminalCols > 0 ? (
-          <ErrorBoundary label="Terminal" resetKey={`${hostId}:${workspaceId}`}>
-            <TerminalPane key={`${hostId}:${workspaceId}`} hostId={hostId} workspaceId={workspaceId} width={terminalCols} height={bodyHeight} />
-          </ErrorBoundary>
+          <>
+            <Divider name="terminal" width={terminalCols} min={Math.min(TERMINAL_MIN, terminalCols)}
+              max={width - 1 - (showPanel ? PANEL_MIN_TERM_WIDTH : MAIN_MIN + (showSidebar ? narrowSidebar + 1 : 0))}
+              grow={-1} onResize={setTerminalWidth} />
+            <ErrorBoundary label="Terminal" resetKey={`${hostId}:${workspaceId}`}>
+              <TerminalPane key={`${hostId}:${workspaceId}`} hostId={hostId} workspaceId={workspaceId} width={terminalCols} height={bodyHeight} />
+            </ErrorBoundary>
+          </>
         ) : null}
       </box>
       <StatusBar />
