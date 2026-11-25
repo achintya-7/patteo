@@ -17,14 +17,17 @@ import { Toaster } from "./Toaster";
 import { useSelectedWorkspace } from "./workspace/use-workspace";
 import { closeTab } from "./workspace/tabs-model";
 import { WorkspacePane } from "./workspace/WorkspacePane";
+import { TerminalPane } from "./workspace/TerminalPane";
 
 const SIDEBAR_SIZES = { narrow: 28, normal: 38, wide: 48 } as const;
 
 export function App() {
+  const { ui } = useApp();
   const t = useTheme();
   const { width, height } = useTerminalDimensions();
   const sidebarVisible = useUi((s) => s.sidebarVisible);
   const panelOpen = useUi((s) => s.panelOpen);
+  const terminalOpen = useUi((s) => s.terminalOpen);
   const size = useSettings((s) => s.settings.sidebar);
   const panelSide = useSettings((s) => s.settings.panelSide);
   const { hostId, workspaceId } = useSelectedWorkspace();
@@ -32,24 +35,40 @@ export function App() {
   usePermissionToasts();
 
   const bodyHeight = Math.max(3, height - 1);
-  const sbWidth = Math.min(SIDEBAR_SIZES[size], sidebarWidth(width) + (SIDEBAR_SIZES[size] - 38));
-  const sidebarCols = sidebarVisible ? Math.max(22, sbWidth) : 0;
-  const showPanel = panelOpen && !!hostId && !!workspaceId && width >= PANEL_MIN_TERM_WIDTH;
-  const panelCols = showPanel ? panelWidth(width) : 0;
-  const panel = showPanel ? (
+  const chatLayout = (available: number) => {
+    const sbWidth = Math.min(SIDEBAR_SIZES[size], sidebarWidth(available) + (SIDEBAR_SIZES[size] - 38));
+    const sidebarCols = sidebarVisible && available >= 42 ? Math.max(22, sbWidth) : 0;
+    const panelCols = panelOpen && hostId && workspaceId && available >= PANEL_MIN_TERM_WIDTH ? panelWidth(available) : 0;
+    return { sidebarCols, panelCols, chatCols: available - sidebarCols - panelCols };
+  };
+  const terminalCols = terminalOpen
+    ? Math.min(Math.max(20, Math.floor(chatLayout(width).chatCols / 2)), Math.max(0, width - 20))
+    : 0;
+  const leftWidth = width - terminalCols;
+  const { sidebarCols, panelCols, chatCols } = chatLayout(leftWidth);
+  const panel = panelCols > 0 && hostId && workspaceId ? (
     <ErrorBoundary label="Panel">
-      <ExplorerPanel hostId={hostId} workspaceId={workspaceId!} width={panelCols} height={bodyHeight} />
+      <ExplorerPanel hostId={hostId} workspaceId={workspaceId} width={panelCols} height={bodyHeight} />
     </ErrorBoundary>
   ) : null;
   return (
     <box flexDirection="column" width={width} height={height} backgroundColor={t.bg}>
       <box flexDirection="row" height={bodyHeight}>
-        {sidebarVisible ? <Sidebar height={bodyHeight} width={sidebarCols} /> : null}
-        {panelSide === "left" ? panel : null}
-        <ErrorBoundary label="Main pane">
-          <WorkspacePane width={Math.max(20, width - sidebarCols - panelCols)} height={bodyHeight} />
-        </ErrorBoundary>
-        {panelSide === "right" ? panel : null}
+        <box flexDirection="row" width={leftWidth} flexShrink={0} overflow="hidden" onMouseDown={() => {
+          if (ui.getState().focus === "terminal") ui.actions.setFocus("main");
+        }}>
+          {sidebarCols ? <Sidebar height={bodyHeight} width={sidebarCols} /> : null}
+          {panelSide === "left" ? panel : null}
+          <ErrorBoundary label="Main pane">
+            <WorkspacePane width={Math.max(20, chatCols)} height={bodyHeight} />
+          </ErrorBoundary>
+          {panelSide === "right" ? panel : null}
+        </box>
+        {terminalCols > 0 ? (
+          <ErrorBoundary label="Terminal" resetKey={`${hostId}:${workspaceId}`}>
+            <TerminalPane key={`${hostId}:${workspaceId}`} hostId={hostId} workspaceId={workspaceId} width={terminalCols} height={bodyHeight} />
+          </ErrorBoundary>
+        ) : null}
       </box>
       <StatusBar />
       <ErrorBoundary label="Dialog">
