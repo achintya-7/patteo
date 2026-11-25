@@ -89,6 +89,8 @@ function ModalLayer() {
       return <ModelModal />;
     case "agents":
       return <AgentsModal />;
+    case "subagents":
+      return <AgentsModal subagents />;
     case "confirm":
       return <ConfirmModal title={modal.title} body={modal.body} confirmLabel={modal.confirmLabel} onConfirm={() => confirm(modal)} />;
   }
